@@ -70,7 +70,10 @@ input, select, textarea { font: inherit; color: inherit; }
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
 .modal { width: 460px; max-width: 100%; background: var(--paper); border-radius: var(--radius-l); box-shadow: var(--shadow-l); padding: 24px; max-height: 88vh; overflow-y: auto; }
+.modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .modal-title { font-size: 17px; font-weight: 700; margin: 0 0 16px; color: var(--ink-2); }
+.modal-close { border: 0; background: transparent; color: var(--mute); font-size: 18px; line-height: 1; padding: 2px 4px; }
+.modal-close:hover { color: var(--ink-2); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }

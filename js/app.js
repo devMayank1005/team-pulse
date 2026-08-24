@@ -125,9 +125,12 @@ function taskCardHtml(t) {
 
 // ---------- Task modal ----------
 function taskModalHtml(editing) {
-  return `<div class="modal-backdrop" data-action="close-modal">
-    <div class="modal" onclick="event.stopPropagation()">
-      <p class="modal-title">${editing ? 'Edit task' : 'New task'}</p>
+  return `<div class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <p class="modal-title">${editing ? 'Edit task' : 'New task'}</p>
+        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">X</button>
+      </div>
       <form id="taskForm">
         <div class="field"><label>Title</label><input name="title" value="${esc(editing?.title || '')}" required /></div>
         <div class="field"><label>Description</label><textarea name="description" rows="3">${esc(editing?.description || '')}</textarea></div>
@@ -146,7 +149,7 @@ function taskModalHtml(editing) {
           </select>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+          <button type="button" class="btn btn-secondary modal-cancel" data-action="close-modal">Cancel</button>
           <button type="submit" class="btn btn-primary">${editing ? 'Save' : 'Create'}</button>
         </div>
       </form>
@@ -155,8 +158,8 @@ function taskModalHtml(editing) {
 }
 
 function emailModalHtml() {
-  return `<div class="modal-backdrop" data-action="close-modal">
-    <div class="modal" onclick="event.stopPropagation()">
+  return `<div class="modal-backdrop">
+    <div class="modal">
       <p class="modal-title">Send email</p>
       <form id="emailForm">
         <div class="field"><label>Send from</label><select name="sender">
@@ -167,7 +170,7 @@ function emailModalHtml() {
         <div class="field"><label>Subject</label><input name="subject" required /></div>
         <div class="field"><label>Message</label><textarea name="body" rows="5" required></textarea></div>
         <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+          <button type="button" class="btn btn-secondary modal-cancel" data-action="close-modal">Cancel</button>
           <button type="submit" class="btn btn-primary">Send</button>
         </div>
       </form>
@@ -177,8 +180,8 @@ function emailModalHtml() {
 
 // ---------- Admin / roster modal ----------
 function adminModalHtml() {
-  return `<div class="modal-backdrop" data-action="close-modal">
-    <div class="modal" style="width:520px" onclick="event.stopPropagation()">
+  return `<div class="modal-backdrop">
+    <div class="modal" style="width:520px">
       <p class="modal-title">Team</p>
       <div id="rosterList">
         ${S.users.map(u => `<div class="roster-row">
@@ -196,7 +199,7 @@ function adminModalHtml() {
           <select name="role"><option value="member">Member</option><option value="admin">Admin</option></select>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" data-action="close-modal">Close</button>
+          <button type="button" class="btn btn-secondary modal-cancel" data-action="close-modal">Close</button>
           <button type="submit" class="btn btn-primary">Add member</button>
         </div>
       </form>
@@ -209,6 +212,12 @@ function renderModal() {
   el.id = 'modalRoot';
   el.innerHTML = modalState.type === 'task' ? taskModalHtml(modalState.editing) : modalState.type === 'email' ? emailModalHtml() : adminModalHtml();
   document.body.appendChild(el);
+  el.querySelectorAll('[data-action="close-modal"]').forEach(button => {
+    button.addEventListener('click', closeModal);
+  });
+  el.querySelector('.modal-backdrop').addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) closeModal();
+  });
 }
 function closeModal() {
   modalState = null;
@@ -338,7 +347,11 @@ document.addEventListener('click', async (e) => {
   if (action === 'new-task') { modalState = { type: 'task', editing: null }; renderModal(); return; }
   if (action === 'open-admin') { modalState = { type: 'user' }; renderModal(); return; }
   if (action === 'open-email') { modalState = { type: 'email' }; renderModal(); return; }
-  if (action === 'close-modal') { closeModal(); return; }
+  if (action === 'close-modal' && (
+    btn.classList.contains('modal-backdrop') ||
+    btn.classList.contains('modal-close') ||
+    btn.classList.contains('modal-cancel')
+  )) { closeModal(); return; }
 
   if (action === 'edit-task') {
     const task = S.tasks.find(t => t.id === btn.dataset.id);
