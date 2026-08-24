@@ -6,36 +6,284 @@ let modalState = null; // { type: 'task'|'user', editing: obj|null }
 
 function render() {
   const root = document.getElementById('app');
-  if (!S.user) { root.innerHTML = loginHtml(); return; }
-  root.innerHTML = shellHtml();
+  if (!S.user) { root.innerHTML = landingPageHtml(); }
+  else { root.innerHTML = shellHtml(); }
   if (modalState) renderModal();
 }
 
-// ---------- Login ----------
-function loginHtml(errorMsg) {
+// ---------- Microsoft Logo SVG Helper ----------
+function msLogoSvg(size = 18) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#f25022" d="M0 0h10v10H0z"/>
+    <path fill="#7fba00" d="M11 0h10v10H11z"/>
+    <path fill="#00a4ef" d="M0 11h10v10H0z"/>
+    <path fill="#ffb900" d="M11 11h10v10H11z"/>
+  </svg>`;
+}
+
+// ---------- Pulse Logo SVG Helper ----------
+function pulseLogoSvg(size = 20) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+  </svg>`;
+}
+
+// ---------- Landing Page (Unauthenticated State) ----------
+function landingPageHtml() {
+  return `
+  <div class="landing-wrap">
+    <!-- Navbar -->
+    <header class="landing-nav">
+      <a href="/" class="brand-link">
+        <div class="brand-icon-wrap">${pulseLogoSvg(20)}</div>
+        <span>Team Pulse</span>
+      </a>
+      <nav class="landing-nav-links">
+        <a href="#features">Features</a>
+        <a href="#reminders">Daily Reminders</a>
+        <a href="#workflow">How It Works</a>
+        <a href="#security">Security</a>
+      </nav>
+      <div class="landing-nav-actions">
+        <a class="btn-ms-inline" href="/api/auth-microsoft">
+          ${msLogoSvg(16)}
+          <span>Sign in with Microsoft</span>
+        </a>
+        <button class="btn btn-secondary" data-action="open-login">Sign in</button>
+      </div>
+    </header>
+
+    <!-- Hero Section -->
+    <main>
+      <section class="landing-hero">
+        <div class="hero-glow"></div>
+        <div class="hero-content">
+          <div class="hero-badge">✨ Intelligent Team Alignment & End-of-Day Reminders</div>
+          <h1 class="hero-title">Keep Your Team in Sync, <span class="hero-title-accent">Every Single Day</span></h1>
+          <p class="hero-subtitle">
+            Daily task tracking with assignees, due dates, and automated end-of-day reminders delivered straight to your inbox via Microsoft Graph and posted directly to Microsoft Teams.
+          </p>
+          <div class="hero-ctas">
+            <a class="btn-ms-inline" href="/api/auth-microsoft">
+              ${msLogoSvg(18)}
+              <span>Sign in with Microsoft</span>
+            </a>
+            <button class="btn btn-primary" data-action="open-login">Sign in with Password</button>
+          </div>
+        </div>
+
+        <!-- Dashboard UI Showcase Preview -->
+        <div class="preview-container">
+          <div class="preview-browser-header">
+            <div class="preview-dots">
+              <div class="preview-dot" style="background:#ef4444"></div>
+              <div class="preview-dot" style="background:#f59e0b"></div>
+              <div class="preview-dot" style="background:#10b981"></div>
+            </div>
+            <div class="preview-address">https://team-pulse-ruddy.vercel.app</div>
+            <div style="font-size:12px;font-weight:600;color:var(--blue)">Live Board</div>
+          </div>
+          <div class="preview-board">
+            <!-- Open Col -->
+            <div class="preview-col">
+              <div class="preview-col-head">
+                <span>Open</span>
+                <span class="count-pill">2</span>
+              </div>
+              <div class="task-card">
+                <div class="task-title">Deploy v1.2 Production Release</div>
+                <div class="task-meta">
+                  <span>Mayank</span>
+                  <span>· Today</span>
+                  <span class="badge badge-high">High</span>
+                  <span class="badge badge-today">Due today</span>
+                </div>
+              </div>
+              <div class="task-card">
+                <div class="task-title">Review Client Presentation Deck</div>
+                <div class="task-meta">
+                  <span>Yashwanth</span>
+                  <span>· Tomorrow</span>
+                </div>
+              </div>
+            </div>
+            <!-- In Progress Col -->
+            <div class="preview-col">
+              <div class="preview-col-head">
+                <span>In Progress</span>
+                <span class="count-pill">1</span>
+              </div>
+              <div class="task-card">
+                <div class="task-title">Supabase Database Optimization</div>
+                <div class="task-meta">
+                  <span>Mayank</span>
+                  <span class="badge badge-high">High</span>
+                </div>
+              </div>
+            </div>
+            <!-- Done Col -->
+            <div class="preview-col">
+              <div class="preview-col-head">
+                <span>Done</span>
+                <span class="count-pill">2</span>
+              </div>
+              <div class="task-card" style="opacity:0.85">
+                <div class="task-title" style="text-decoration:line-through;color:var(--mute)">Microsoft Entra SSO Integration</div>
+                <div class="task-meta">
+                  <span>Yashwanth</span>
+                  <span>· Completed</span>
+                </div>
+              </div>
+              <div class="task-card" style="opacity:0.85">
+                <div class="task-title" style="text-decoration:line-through;color:var(--mute)">Configure Daily Cron Reminders</div>
+                <div class="task-meta">
+                  <span>Mayank</span>
+                  <span>· Completed</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Feature Grid Section -->
+      <section id="features" class="landing-section landing-section-alt">
+        <div class="section-header">
+          <div class="section-tag">Enterprise Power</div>
+          <h2 class="section-title">Built for Modern High-Performing Teams</h2>
+          <p class="section-desc">Zero clutter, instant visibility, and automated end-of-day alignment so no deliverable falls through the cracks.</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card" id="reminders">
+            <div class="feature-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </div>
+            <h3 class="feature-title">Automated Daily Reminders</h3>
+            <p class="feature-text">Team members receive personalized email digests via Microsoft Graph summarizing overdue, due today, and upcoming priorities.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <h3 class="feature-title">Microsoft Teams Summaries</h3>
+            <p class="feature-text">Post consolidated daily status cards into your Microsoft Teams channel so the entire squad has full visibility at the close of every day.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            </div>
+            <h3 class="feature-title">Frictionless Microsoft SSO</h3>
+            <p class="feature-text">Sign in securely with your Microsoft Entra corporate account. Domain restrictions ensure seamless access exclusively for verified members.</p>
+          </div>
+
+          <div class="feature-card" id="security">
+            <div class="feature-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3 class="feature-title">Enterprise Security</h3>
+            <p class="feature-text">Equipped with bcrypt password hashing, IP and username brute-force lockout safeguards, and complete audit logging.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Workflow Section -->
+      <section id="workflow" class="landing-section">
+        <div class="section-header">
+          <div class="section-tag">Simple 3-Step Workflow</div>
+          <h2 class="section-title">How Team Pulse Works</h2>
+          <p class="section-desc">A frictionless rhythm designed to save hours of daily status meetings.</p>
+        </div>
+        <div class="workflow-grid">
+          <div class="workflow-step">
+            <div class="step-num">1</div>
+            <h3 class="step-title">Assign & Prioritize</h3>
+            <p class="step-text">Add tasks with due dates, assignees, and priority tags on a fast, responsive Kanban board.</p>
+          </div>
+          <div class="workflow-step">
+            <div class="step-num">2</div>
+            <h3 class="step-title">Automatic Reminders</h3>
+            <p class="step-text">Scheduled daily jobs automatically evaluate pending tasks and dispatch personalized email digests.</p>
+          </div>
+          <div class="workflow-step">
+            <div class="step-num">3</div>
+            <h3 class="step-title">Daily Wrap-Up</h3>
+            <p class="step-text">A unified summary card arrives in Microsoft Teams, keeping stakeholders aligned and unblocked.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Security Banner -->
+      <section class="landing-section landing-section-alt" style="padding-top:40px;padding-bottom:60px">
+        <div class="security-banner">
+          <div>
+            <h3 class="security-title">Ready to keep your team aligned?</h3>
+            <p class="security-desc">Sign in with your corporate Microsoft account to view your active board, or authenticate with team credentials.</p>
+          </div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <a class="btn-ms-inline" href="/api/auth-microsoft" style="background:#ffffff">
+              ${msLogoSvg(18)}
+              <span>Sign in with Microsoft</span>
+            </a>
+            <button class="btn btn-primary" data-action="open-login">Sign in with Password</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="landing-footer">
+      <div class="footer-inner">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--ink-2)">
+          <div class="brand-icon-wrap" style="width:26px;height:26px">${pulseLogoSvg(15)}</div>
+          <span>Team Pulse</span>
+        </div>
+        <div class="footer-links">
+          <a href="#features">Features</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#security">Security</a>
+          <a href="https://kognozconsulting.com" target="_blank" rel="noopener">Kognoz Consulting</a>
+        </div>
+        <div>© 2026 Team Pulse. All rights reserved.</div>
+      </div>
+    </footer>
+  </div>`;
+}
+
+// ---------- Login Modal ----------
+function loginModalHtml(errorMsg) {
   const params = new URLSearchParams(location.search);
   const ssoError = params.get('ssoError');
   const msg = errorMsg || (ssoError ? ssoErrorText(ssoError) : '');
   return `
-  <div class="login-wrap">
-    <div class="login-card">
-      <p class="login-title">Team Pulse</p>
-      <p class="login-sub">Daily task tracker for the team.</p>
-      ${msg ? `<div class="err-msg">${esc(msg)}</div>` : ''}
-      <form id="loginForm">
-        <div class="field"><label>Username</label><input name="username" autocomplete="username" required /></div>
+  <div class="modal-backdrop">
+    <div class="modal" style="width:400px">
+      <div class="modal-head">
+        <div>
+          <p class="modal-title" style="margin:0 0 4px">Sign in to Team Pulse</p>
+          <p style="font-size:13px;color:var(--mute);margin:0">Enter your credentials to access your board.</p>
+        </div>
+        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+      </div>
+      ${msg ? `<div class="err-msg" style="margin-top:14px">${esc(msg)}</div>` : ''}
+      <form id="loginForm" style="margin-top:16px">
+        <div class="field"><label>Username</label><input name="username" autocomplete="username" required autofocus /></div>
         <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required /></div>
-        <button class="btn btn-primary" style="width:100%" type="submit">Sign in</button>
+        <button class="btn btn-primary" style="width:100%;margin-top:6px" type="submit">Sign in</button>
       </form>
       <div class="divider">or</div>
-      <a class="btn btn-ms" href="/api/auth-microsoft">Sign in with Microsoft</a>
+      <a class="btn-ms-inline" href="/api/auth-microsoft" style="width:100%;justify-content:center;padding:10px 14px">
+        ${msLogoSvg(18)}
+        <span>Sign in with Microsoft</span>
+      </a>
     </div>
   </div>`;
 }
 
 function ssoErrorText(code) {
   if (code === 'not_authorized') return 'Your Microsoft account isn\'t on the Team Pulse user list. Ask an admin to add you.';
-  if (code === 'not_configured') return 'Microsoft sign-in isn\'t configured yet.';
+  if (code === 'not_configured') return 'Microsoft sign-in isn\'t configured yet on this server.';
   if (code.startsWith('msft_')) return 'Microsoft sign-in was cancelled or blocked.';
   return 'Microsoft sign-in failed. Please try again or use your password.';
 }
@@ -210,7 +458,15 @@ function adminModalHtml() {
 function renderModal() {
   const el = document.createElement('div');
   el.id = 'modalRoot';
-  el.innerHTML = modalState.type === 'task' ? taskModalHtml(modalState.editing) : modalState.type === 'email' ? emailModalHtml() : adminModalHtml();
+  if (modalState.type === 'login') {
+    el.innerHTML = loginModalHtml(modalState.error);
+  } else if (modalState.type === 'task') {
+    el.innerHTML = taskModalHtml(modalState.editing);
+  } else if (modalState.type === 'email') {
+    el.innerHTML = emailModalHtml();
+  } else {
+    el.innerHTML = adminModalHtml();
+  }
   document.body.appendChild(el);
   el.querySelectorAll('[data-action="close-modal"]').forEach(button => {
     button.addEventListener('click', closeModal);
@@ -247,6 +503,12 @@ async function init() {
     history.replaceState({}, '', location.pathname);
   }
 
+  const ssoError = params.get('ssoError');
+  if (ssoError && !S.user) {
+    modalState = { type: 'login', error: ssoErrorText(ssoError) };
+    history.replaceState({}, '', location.pathname);
+  }
+
   if (S.token && !S.user) {
     S.user = JSON.parse(localStorage.getItem('tp_user') || 'null');
   }
@@ -268,10 +530,12 @@ document.addEventListener('submit', async (e) => {
     try {
       const data = await api('/api/login', { method: 'POST', body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }) });
       setSession(data.token, data.user);
+      closeModal();
       await loadData();
       render();
     } catch (err) {
-      document.getElementById('app').innerHTML = loginHtml(err.message);
+      modalState = { type: 'login', error: err.message };
+      renderModal_replace();
     }
     return;
   }
@@ -344,6 +608,7 @@ document.addEventListener('click', async (e) => {
   const action = btn.dataset.action;
 
   if (action === 'logout') { clearSession(); render(); return; }
+  if (action === 'open-login') { modalState = { type: 'login' }; renderModal(); return; }
   if (action === 'new-task') { modalState = { type: 'task', editing: null }; renderModal(); return; }
   if (action === 'open-admin') { modalState = { type: 'user' }; renderModal(); return; }
   if (action === 'open-email') { modalState = { type: 'email' }; renderModal(); return; }
