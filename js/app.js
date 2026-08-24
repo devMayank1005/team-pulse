@@ -1,41 +1,579 @@
-// js/app.js — render + event handling. render() fully replaces #app's
-// innerHTML every call (no diffing) — same convention as Kora: never call
-// it from a timer, only as the direct result of a user action.
+// js/app.js — Component-Level DOM Lifecycle, Optimistic UI & Modern Interaction Layer
+// Pure Vanilla JavaScript • No Frameworks • No Build Step
 
-let modalState = null; // { type: 'task'|'user', editing: obj|null }
+// ============================================================================
+// SVG ICONS & BRAND ASSETS
+// ============================================================================
+const Icons = {
+  pulse: (size = 20) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`,
+  msLogo: (size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg"><path fill="#f25022" d="M0 0h10v10H0z"/><path fill="#7fba00" d="M11 0h10v10H11z"/><path fill="#00a4ef" d="M0 11h10v10H0z"/><path fill="#ffb900" d="M11 11h10v10H11z"/></svg>`,
+  search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+  plus: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+  play: `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
+  mail: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+  team: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  logout: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+  emptyTask: `<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>`,
+};
 
-function render() {
-  const root = document.getElementById('app');
-  if (!S.user) { root.innerHTML = landingPageHtml(); }
-  else { root.innerHTML = shellHtml(); }
-  if (modalState) renderModal();
+// ============================================================================
+// COMPONENT RENDERERS
+// ============================================================================
+
+// 1. App Shell (Header)
+function renderHeader() {
+  const state = S_STORE.getState();
+  const user = state.auth.user;
+  if (!user) return '';
+
+  const isAdmin = user.role === 'admin';
+  const canSendMail = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'].includes((user.email || '').toLowerCase());
+
+  return `
+  <header class="topbar">
+    <div class="brand-group">
+      <div class="brand-icon-wrap">${Icons.pulse(18)}</div>
+      <span class="brand-title">Team Pulse</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-profile-badge">
+        <span class="avatar">${userInitials(user.name)}</span>
+        <span>${esc(user.name)}</span>
+        <span class="role-pill">${isAdmin ? 'Admin' : 'Member'}</span>
+      </div>
+      ${canSendMail ? `<button class="btn btn-secondary btn-sm" data-action="open-email">${Icons.mail} Send Email</button>` : ''}
+      ${isAdmin ? `<button class="btn btn-secondary btn-sm" data-action="open-admin">${Icons.team} Team</button>` : ''}
+      <button class="btn btn-secondary btn-sm" data-action="logout" title="Sign out">${Icons.logout} Sign out</button>
+    </div>
+  </header>`;
 }
 
-// ---------- Microsoft Logo SVG Helper ----------
-function msLogoSvg(size = 18) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
-    <path fill="#f25022" d="M0 0h10v10H0z"/>
-    <path fill="#7fba00" d="M11 0h10v10H11z"/>
-    <path fill="#00a4ef" d="M0 11h10v10H0z"/>
-    <path fill="#ffb900" d="M11 11h10v10H11z"/>
-  </svg>`;
+// 2. Executive Summary Metrics
+function renderSummaryMetrics() {
+  const state = S_STORE.getState();
+  const tasks = state.server.tasks;
+  const metrics = computeMetrics(tasks);
+
+  return `
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-label">
+        <span class="summary-dot" style="background:#64748b"></span>
+        <span>Total Tasks</span>
+      </div>
+      <div class="summary-value">${metrics.total}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">
+        <span class="summary-dot" style="background:var(--primary)"></span>
+        <span>In Progress</span>
+      </div>
+      <div class="summary-value" style="color:var(--primary)">${metrics.inProgress}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">
+        <span class="summary-dot" style="background:var(--status-done)"></span>
+        <span>Completed</span>
+      </div>
+      <div class="summary-value" style="color:var(--status-done)">${metrics.completed}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">
+        <span class="summary-dot" style="background:var(--priority-high)"></span>
+        <span>Overdue</span>
+      </div>
+      <div class="summary-value" style="color:${metrics.overdue > 0 ? 'var(--priority-high)' : 'var(--ink)'}">${metrics.overdue}</div>
+    </div>
+  </div>`;
 }
 
-// ---------- Pulse Logo SVG Helper ----------
-function pulseLogoSvg(size = 20) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-  </svg>`;
+// 3. Toolbar (Search, Filters, Sort, Actions)
+function renderToolbar() {
+  const state = S_STORE.getState();
+  const { filters, server } = state;
+  const users = server.users;
+
+  const hasActiveFilters = filters.search || filters.assignee !== 'all' || filters.status !== 'all' || filters.priority !== 'all' || filters.dueDate !== 'all';
+
+  return `
+  <div class="toolbar-card">
+    <div class="toolbar-left">
+      <!-- Search Input -->
+      <div class="search-box">
+        <span class="search-icon">${Icons.search}</span>
+        <input
+          type="text"
+          id="taskSearchInput"
+          class="search-input"
+          placeholder="Search title, description, assignee..."
+          value="${esc(filters.search)}"
+          autocomplete="off"
+        />
+        ${filters.search ? `<span class="search-clear" data-action="clear-search" title="Clear search">✕</span>` : ''}
+      </div>
+
+      <!-- Filters Dropdowns -->
+      <div class="filters-group">
+        <select class="filter-select" data-filter="assignee" title="Filter by Assignee">
+          <option value="all">Assignee: Everyone</option>
+          <option value="unassigned" ${filters.assignee === 'unassigned' ? 'selected' : ''}>Unassigned</option>
+          ${users.map(u => `<option value="${u.id}" ${filters.assignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+        </select>
+
+        <select class="filter-select" data-filter="status" title="Filter by Status">
+          <option value="all">Status: All</option>
+          <option value="open" ${filters.status === 'open' ? 'selected' : ''}>Open</option>
+          <option value="in_progress" ${filters.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+          <option value="done" ${filters.status === 'done' ? 'selected' : ''}>Done</option>
+        </select>
+
+        <select class="filter-select" data-filter="priority" title="Filter by Priority">
+          <option value="all">Priority: All</option>
+          <option value="high" ${filters.priority === 'high' ? 'selected' : ''}>High</option>
+          <option value="normal" ${filters.priority === 'normal' ? 'selected' : ''}>Normal</option>
+          <option value="low" ${filters.priority === 'low' ? 'selected' : ''}>Low</option>
+        </select>
+
+        <select class="filter-select" data-filter="dueDate" title="Filter by Due Date">
+          <option value="all">Due Date: All</option>
+          <option value="overdue" ${filters.dueDate === 'overdue' ? 'selected' : ''}>Overdue</option>
+          <option value="today" ${filters.dueDate === 'today' ? 'selected' : ''}>Due Today</option>
+          <option value="upcoming" ${filters.dueDate === 'upcoming' ? 'selected' : ''}>Upcoming</option>
+          <option value="none" ${filters.dueDate === 'none' ? 'selected' : ''}>No Due Date</option>
+        </select>
+
+        <select class="filter-select" data-filter="sort" title="Sort Order">
+          <option value="due_date_asc" ${filters.sort === 'due_date_asc' ? 'selected' : ''}>Sort: Due Date (Earliest)</option>
+          <option value="due_date_desc" ${filters.sort === 'due_date_desc' ? 'selected' : ''}>Sort: Due Date (Latest)</option>
+          <option value="priority_desc" ${filters.sort === 'priority_desc' ? 'selected' : ''}>Sort: Priority (Highest)</option>
+          <option value="created_desc" ${filters.sort === 'created_desc' ? 'selected' : ''}>Sort: Recently Created</option>
+        </select>
+
+        ${hasActiveFilters ? `<button class="btn-clear-filters" data-action="reset-filters">✕ Reset</button>` : ''}
+      </div>
+    </div>
+
+    <!-- Actions Right -->
+    <div class="toolbar-right">
+      <button class="btn btn-primary" data-action="new-task">${Icons.plus} Add Task</button>
+    </div>
+  </div>`;
 }
 
-// ---------- Landing Page (Unauthenticated State) ----------
-function landingPageHtml() {
+// 4. Mobile Column Switcher Tabs
+function renderMobileTabs() {
+  const state = S_STORE.getState();
+  const activeCol = state.ui.activeMobileCol;
+  const tasks = filterAndSortTasks(state.server.tasks, state.filters, state.server.users);
+
+  const openCount = tasks.filter(t => t.status === 'open').length;
+  const progCount = tasks.filter(t => t.status === 'in_progress').length;
+  const doneCount = tasks.filter(t => t.status === 'done').length;
+
+  return `
+  <div class="mobile-tabs">
+    <button class="mobile-tab ${activeCol === 'all' ? 'active' : ''}" data-action="set-mobile-col" data-col="all">All (${tasks.length})</button>
+    <button class="mobile-tab ${activeCol === 'open' ? 'active' : ''}" data-action="set-mobile-col" data-col="open">Open (${openCount})</button>
+    <button class="mobile-tab ${activeCol === 'in_progress' ? 'active' : ''}" data-action="set-mobile-col" data-col="in_progress">In Progress (${progCount})</button>
+    <button class="mobile-tab ${activeCol === 'done' ? 'active' : ''}" data-action="set-mobile-col" data-col="done">Done (${doneCount})</button>
+  </div>`;
+}
+
+// 5. Task Card Renderer
+function renderTaskCard(task) {
+  const dueInfo = formatDueDate(task.due_date);
+  let dueBadge = '';
+  if (dueInfo && task.status !== 'done') {
+    if (dueInfo.status === 'overdue') dueBadge = `<span class="badge badge-overdue">${dueInfo.label}</span>`;
+    else if (dueInfo.status === 'today') dueBadge = `<span class="badge badge-today">${dueInfo.label}</span>`;
+    else dueBadge = `<span class="badge badge-upcoming">${dueInfo.label}</span>`;
+  } else if (task.due_date && task.status === 'done') {
+    dueBadge = `<span class="badge badge-normal">Completed</span>`;
+  }
+
+  const priorityBadge = task.priority === 'high'
+    ? `<span class="badge badge-high">High</span>`
+    : task.priority === 'low'
+      ? `<span class="badge badge-low">Low</span>`
+      : '';
+
+  const name = userName(task.assignee_id);
+  const initials = userInitials(name);
+  const isDone = task.status === 'done';
+
+  return `
+  <div
+    class="task-card ${isDone ? 'card-done' : ''}"
+    data-task-id="${task.id}"
+    draggable="true"
+    tabindex="0"
+  >
+    <div class="card-top">
+      <div class="card-badges">
+        ${priorityBadge}
+        ${dueBadge}
+      </div>
+    </div>
+
+    <div class="task-title">${esc(task.title)}</div>
+    ${task.description ? `<div class="task-desc">${esc(task.description)}</div>` : ''}
+
+    <div class="card-bottom">
+      <div class="card-assignee" title="${esc(name)}">
+        <span class="avatar">${initials}</span>
+        <span>${esc(name)}</span>
+      </div>
+
+      <div class="card-actions">
+        ${task.status === 'open' ? `<button class="action-btn" data-action="advance-task" data-id="${task.id}" data-next="in_progress" title="Start task">${Icons.play} Start</button>` : ''}
+        ${task.status === 'in_progress' ? `<button class="action-btn" data-action="advance-task" data-id="${task.id}" data-next="done" title="Complete task" style="color:var(--status-done)">${Icons.check} Complete</button>` : ''}
+        <button class="action-btn" data-action="edit-task" data-id="${task.id}" title="Edit task">Edit</button>
+        <button class="action-btn action-btn-danger" data-action="delete-task" data-id="${task.id}" title="Delete task">Delete</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 6. Kanban Board Renderer
+function renderBoard() {
+  const state = S_STORE.getState();
+  const { filters, server, ui } = state;
+  const filteredTasks = filterAndSortTasks(server.tasks, filters, server.users);
+  const activeCol = ui.activeMobileCol;
+
+  const columns = [
+    { key: 'open', label: 'Open', color: 'var(--status-open)' },
+    { key: 'in_progress', label: 'In Progress', color: 'var(--status-progress)' },
+    { key: 'done', label: 'Done', color: 'var(--status-done)' },
+  ];
+
+  return `
+  <div class="board-grid">
+    ${columns.map(col => {
+      const colTasks = filteredTasks.filter(t => t.status === col.key);
+      const isMobileActive = activeCol === 'all' || activeCol === col.key;
+
+      return `
+      <div class="kanban-col ${isMobileActive ? 'mobile-active' : ''}" data-col-status="${col.key}">
+        <div class="col-header">
+          <div class="col-header-left">
+            <span class="col-status-indicator" style="background:${col.color}"></span>
+            <span class="col-title">${col.label}</span>
+            <span class="col-count">${colTasks.length}</span>
+          </div>
+          ${col.key !== 'done' ? `<button class="col-quick-add" data-action="quick-add-task" data-status="${col.key}" title="Add task to ${col.label}">+</button>` : ''}
+        </div>
+
+        <div class="col-tasks-list" data-col-status="${col.key}">
+          ${colTasks.length
+            ? colTasks.map(renderTaskCard).join('')
+            : `<div class="empty-col-state">
+                ${Icons.emptyTask}
+                <div class="empty-text">No ${col.label.toLowerCase()} tasks</div>
+                <div class="empty-subtext">${filters.search || filters.assignee !== 'all' ? 'Try adjusting your filters' : 'Drag tasks here or add a new one'}</div>
+               </div>`
+          }
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// 7. Skeletons for Initial Load
+function renderSkeletons() {
+  return `
+  <div class="main-container">
+    <div class="summary-grid">
+      <div class="summary-card skeleton" style="height:78px"></div>
+      <div class="summary-card skeleton" style="height:78px"></div>
+      <div class="summary-card skeleton" style="height:78px"></div>
+      <div class="summary-card skeleton" style="height:78px"></div>
+    </div>
+    <div class="toolbar-card skeleton" style="height:56px"></div>
+    <div class="board-grid">
+      <div class="kanban-col" style="padding:14px">
+        <div class="skeleton" style="height:28px;margin-bottom:14px"></div>
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+      </div>
+      <div class="kanban-col" style="padding:14px">
+        <div class="skeleton" style="height:28px;margin-bottom:14px"></div>
+        <div class="skeleton skeleton-card"></div>
+      </div>
+      <div class="kanban-col" style="padding:14px">
+        <div class="skeleton" style="height:28px;margin-bottom:14px"></div>
+        <div class="skeleton skeleton-card"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 8. Modals Container & Sub-modals
+function renderModal() {
+  const state = S_STORE.getState();
+  const modal = state.ui.modal;
+  if (!modal) return '';
+
+  const { type, editing, error } = modal;
+  const isSubmitting = !!state.ui.submitting[type];
+
+  let modalBody = '';
+  if (type === 'task') {
+    modalBody = renderTaskModalForm(editing, isSubmitting, error);
+  } else if (type === 'user') {
+    modalBody = renderUserModalForm(state.server.users, state.auth.user, isSubmitting, error);
+  } else if (type === 'email') {
+    modalBody = renderEmailModalForm(isSubmitting, error);
+  } else if (type === 'login') {
+    modalBody = renderLoginModalForm(isSubmitting, error);
+  }
+
+  return `
+  <div class="modal-backdrop" id="activeModalBackdrop" role="dialog" aria-modal="true">
+    <div class="modal-box" id="activeModalBox">
+      ${modalBody}
+    </div>
+  </div>`;
+}
+
+function renderTaskModalForm(editing, isSubmitting, error) {
+  const users = S_STORE.getState().server.users;
+  const isEdit = !!editing;
+
+  return `
+  <div class="modal-head">
+    <div>
+      <h2 class="modal-title">${isEdit ? 'Edit Task' : 'Create New Task'}</h2>
+      <p class="modal-desc">${isEdit ? 'Update deliverable details and assignment' : 'Add a task with an assignee and due date'}</p>
+    </div>
+    <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+  </div>
+
+  ${error ? `<div class="err-banner">${error}</div>` : ''}
+
+  <form id="taskForm">
+    <div class="field">
+      <label for="taskTitleInput">Task Title *</label>
+      <input id="taskTitleInput" name="title" value="${esc(editing?.title || '')}" placeholder="e.g. Deploy Production Release v1.2" required autofocus />
+    </div>
+
+    <div class="field">
+      <label for="taskDescInput">Description</label>
+      <textarea id="taskDescInput" name="description" placeholder="Add context, acceptance criteria, or links...">${esc(editing?.description || '')}</textarea>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field">
+        <label for="taskAssigneeSelect">Assignee</label>
+        <select id="taskAssigneeSelect" name="assigneeId">
+          <option value="">Unassigned</option>
+          ${users.map(u => `<option value="${u.id}" ${editing?.assignee_id === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="taskPrioritySelect">Priority</label>
+        <select id="taskPrioritySelect" name="priority">
+          <option value="normal" ${(!editing || editing?.priority === 'normal') ? 'selected' : ''}>Normal</option>
+          <option value="high" ${editing?.priority === 'high' ? 'selected' : ''}>High</option>
+          <option value="low" ${editing?.priority === 'low' ? 'selected' : ''}>Low</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="taskDueDateInput">Due Date</label>
+      <input type="date" id="taskDueDateInput" name="dueDate" value="${editing?.due_date || ''}" />
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+      <button type="submit" class="btn btn-primary ${isSubmitting ? 'btn-loading' : ''}" ${isSubmitting ? 'disabled' : ''}>
+        ${isSubmitting ? 'Saving...' : (isEdit ? 'Save Changes' : 'Create Task')}
+      </button>
+    </div>
+  </form>`;
+}
+
+function renderUserModalForm(users, currentUser, isSubmitting, error) {
+  return `
+  <div class="modal-head">
+    <div>
+      <h2 class="modal-title">Team Management</h2>
+      <p class="modal-desc">Manage member roles and invite team colleagues</p>
+    </div>
+    <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+  </div>
+
+  ${error ? `<div class="err-banner">${error}</div>` : ''}
+
+  <p style="font-size:12px;font-weight:700;color:var(--ink-secondary);text-transform:uppercase;margin-bottom:8px">Current Members (${users.length})</p>
+  <div class="roster-list">
+    ${users.map(u => `
+      <div class="roster-item">
+        <div class="roster-item-info">
+          <span class="avatar">${userInitials(u.name)}</span>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--ink)">${esc(u.name)}</div>
+            <div style="font-size:11px;color:var(--ink-muted)">${esc(u.email || u.username)}</div>
+          </div>
+          <span class="role-pill">${u.role}</span>
+        </div>
+        ${u.id !== currentUser.id ? `<button class="action-btn action-btn-danger" data-action="remove-user" data-id="${u.id}">Remove</button>` : `<span style="font-size:11px;color:var(--ink-muted)">(You)</span>`}
+      </div>
+    `).join('')}
+  </div>
+
+  <p style="font-size:12px;font-weight:700;color:var(--ink-secondary);text-transform:uppercase;margin:20px 0 8px">Add Team Member</p>
+  <form id="userForm">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field">
+        <label>Full Name *</label>
+        <input name="name" placeholder="Jane Doe" required />
+      </div>
+      <div class="field">
+        <label>Username *</label>
+        <input name="username" placeholder="janedoe" required autocomplete="username" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Email * (also used for Microsoft SSO match)</label>
+      <input name="email" type="email" placeholder="jane.doe@kognozconsulting.com" required autocomplete="email" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:12px">
+      <div class="field">
+        <label>Temporary Password (min 8 chars) *</label>
+        <input name="password" type="password" minlength="8" required placeholder="••••••••" />
+      </div>
+      <div class="field">
+        <label>Role</label>
+        <select name="role">
+          <option value="member">Member</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-action="close-modal">Close</button>
+      <button type="submit" class="btn btn-primary ${isSubmitting ? 'btn-loading' : ''}" ${isSubmitting ? 'disabled' : ''}>
+        ${isSubmitting ? 'Adding...' : 'Add Member'}
+      </button>
+    </div>
+  </form>`;
+}
+
+function renderEmailModalForm(isSubmitting, error) {
+  return `
+  <div class="modal-head">
+    <div>
+      <h2 class="modal-title">Send Email</h2>
+      <p class="modal-desc">Send messages directly via Microsoft Graph</p>
+    </div>
+    <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+  </div>
+
+  ${error ? `<div class="err-banner">${error}</div>` : ''}
+
+  <form id="emailForm">
+    <div class="field">
+      <label>Send From</label>
+      <select name="sender">
+        <option value="mayank@kognozconsulting.com">Mayank (mayank@kognozconsulting.com)</option>
+        <option value="yashwanth.krishna@kognozconsulting.com">Yashwanth (yashwanth.krishna@kognozconsulting.com)</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Recipient Email *</label>
+      <input name="to" type="email" placeholder="recipient@domain.com" required />
+    </div>
+
+    <div class="field">
+      <label>Subject *</label>
+      <input name="subject" placeholder="Team Pulse Task Digest" required />
+    </div>
+
+    <div class="field">
+      <label>Message Content *</label>
+      <textarea name="body" rows="4" placeholder="Write your message here..." required></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+      <button type="submit" class="btn btn-primary ${isSubmitting ? 'btn-loading' : ''}" ${isSubmitting ? 'disabled' : ''}>
+        ${isSubmitting ? 'Sending...' : 'Send Message'}
+      </button>
+    </div>
+  </form>`;
+}
+
+function renderLoginModalForm(isSubmitting, error) {
+  return `
+  <div class="modal-head">
+    <div>
+      <h2 class="modal-title">Sign In to Team Pulse</h2>
+      <p class="modal-desc">Enter your team credentials to access your board</p>
+    </div>
+    <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+  </div>
+
+  ${error ? `<div class="err-banner">${error}</div>` : ''}
+
+  <form id="loginForm">
+    <div class="field">
+      <label>Username</label>
+      <input name="username" placeholder="Your username" required autocomplete="username" autofocus />
+    </div>
+
+    <div class="field">
+      <label>Password</label>
+      <input name="password" type="password" placeholder="••••••••" required autocomplete="current-password" />
+    </div>
+
+    <button type="submit" class="btn btn-primary ${isSubmitting ? 'btn-loading' : ''}" style="width:100%;margin-top:6px" ${isSubmitting ? 'disabled' : ''}>
+      ${isSubmitting ? 'Signing in...' : 'Sign In with Password'}
+    </button>
+  </form>
+
+  <div class="divider">or</div>
+
+  <a class="btn-ms-inline" href="/api/auth-microsoft" style="width:100%;justify-content:center;padding:10px 14px">
+    ${Icons.msLogo(18)}
+    <span>Sign in with Microsoft</span>
+  </a>`;
+}
+
+// 9. Toast Container
+function renderToasts() {
+  const state = S_STORE.getState();
+  const toasts = state.toasts;
+  if (!toasts.length) return '';
+
+  return toasts.map(t => {
+    const icon = t.type === 'success' ? '✓' : t.type === 'error' ? '⚠' : t.type === 'warning' ? '!' : 'ℹ';
+    return `
+    <div class="toast-item toast-${t.type}" id="${t.id}" role="status">
+      <div class="toast-icon">${icon}</div>
+      <div class="toast-body">
+        ${t.title ? `<div class="toast-title">${esc(t.title)}</div>` : ''}
+        <div class="toast-msg">${esc(t.message)}</div>
+      </div>
+      <button class="toast-dismiss" data-action="dismiss-toast" data-id="${t.id}" aria-label="Dismiss">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// 10. Landing Page (Unauthenticated State)
+function renderLandingPage() {
   return `
   <div class="landing-wrap">
-    <!-- Navbar -->
     <header class="landing-nav">
       <a href="/" class="brand-link">
-        <div class="brand-icon-wrap">${pulseLogoSvg(20)}</div>
+        <div class="brand-icon-wrap">${Icons.pulse(20)}</div>
         <span>Team Pulse</span>
       </a>
       <nav class="landing-nav-links">
@@ -46,14 +584,13 @@ function landingPageHtml() {
       </nav>
       <div class="landing-nav-actions">
         <a class="btn-ms-inline" href="/api/auth-microsoft">
-          ${msLogoSvg(16)}
+          ${Icons.msLogo(16)}
           <span>Sign in with Microsoft</span>
         </a>
         <button class="btn btn-secondary" data-action="open-login">Sign in</button>
       </div>
     </header>
 
-    <!-- Hero Section -->
     <main>
       <section class="landing-hero">
         <div class="hero-glow"></div>
@@ -65,14 +602,13 @@ function landingPageHtml() {
           </p>
           <div class="hero-ctas">
             <a class="btn-ms-inline" href="/api/auth-microsoft">
-              ${msLogoSvg(18)}
+              ${Icons.msLogo(18)}
               <span>Sign in with Microsoft</span>
             </a>
             <button class="btn btn-primary" data-action="open-login">Sign in with Password</button>
           </div>
         </div>
 
-        <!-- Dashboard UI Showcase Preview -->
         <div class="preview-container">
           <div class="preview-browser-header">
             <div class="preview-dots">
@@ -81,72 +617,42 @@ function landingPageHtml() {
               <div class="preview-dot" style="background:#10b981"></div>
             </div>
             <div class="preview-address">https://team-pulse-ruddy.vercel.app</div>
-            <div style="font-size:12px;font-weight:600;color:var(--blue)">Live Board</div>
+            <div style="font-size:12px;font-weight:700;color:var(--primary)">Live Board</div>
           </div>
           <div class="preview-board">
-            <!-- Open Col -->
             <div class="preview-col">
-              <div class="preview-col-head">
-                <span>Open</span>
-                <span class="count-pill">2</span>
-              </div>
+              <div class="preview-col-head"><span>Open</span><span class="col-count">2</span></div>
               <div class="task-card">
+                <div class="card-badges"><span class="badge badge-high">High</span><span class="badge badge-today">Due today</span></div>
                 <div class="task-title">Deploy v1.2 Production Release</div>
-                <div class="task-meta">
-                  <span>Mayank</span>
-                  <span>· Today</span>
-                  <span class="badge badge-high">High</span>
-                  <span class="badge badge-today">Due today</span>
-                </div>
+                <div class="card-bottom"><div class="card-assignee"><span class="avatar">MK</span><span>Mayank</span></div></div>
               </div>
               <div class="task-card">
+                <div class="card-badges"><span class="badge badge-normal">Normal</span></div>
                 <div class="task-title">Review Client Presentation Deck</div>
-                <div class="task-meta">
-                  <span>Yashwanth</span>
-                  <span>· Tomorrow</span>
-                </div>
+                <div class="card-bottom"><div class="card-assignee"><span class="avatar">YK</span><span>Yashwanth</span></div></div>
               </div>
             </div>
-            <!-- In Progress Col -->
             <div class="preview-col">
-              <div class="preview-col-head">
-                <span>In Progress</span>
-                <span class="count-pill">1</span>
-              </div>
+              <div class="preview-col-head"><span>In Progress</span><span class="col-count">1</span></div>
               <div class="task-card">
+                <div class="card-badges"><span class="badge badge-high">High</span></div>
                 <div class="task-title">Supabase Database Optimization</div>
-                <div class="task-meta">
-                  <span>Mayank</span>
-                  <span class="badge badge-high">High</span>
-                </div>
+                <div class="card-bottom"><div class="card-assignee"><span class="avatar">MK</span><span>Mayank</span></div></div>
               </div>
             </div>
-            <!-- Done Col -->
             <div class="preview-col">
-              <div class="preview-col-head">
-                <span>Done</span>
-                <span class="count-pill">2</span>
-              </div>
-              <div class="task-card" style="opacity:0.85">
-                <div class="task-title" style="text-decoration:line-through;color:var(--mute)">Microsoft Entra SSO Integration</div>
-                <div class="task-meta">
-                  <span>Yashwanth</span>
-                  <span>· Completed</span>
-                </div>
-              </div>
-              <div class="task-card" style="opacity:0.85">
-                <div class="task-title" style="text-decoration:line-through;color:var(--mute)">Configure Daily Cron Reminders</div>
-                <div class="task-meta">
-                  <span>Mayank</span>
-                  <span>· Completed</span>
-                </div>
+              <div class="preview-col-head"><span>Done</span><span class="col-count">2</span></div>
+              <div class="task-card card-done">
+                <div class="card-badges"><span class="badge badge-normal">Completed</span></div>
+                <div class="task-title">Microsoft Entra SSO Integration</div>
+                <div class="card-bottom"><div class="card-assignee"><span class="avatar">YK</span><span>Yashwanth</span></div></div>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Feature Grid Section -->
       <section id="features" class="landing-section landing-section-alt">
         <div class="section-header">
           <div class="section-tag">Enterprise Power</div>
@@ -155,40 +661,28 @@ function landingPageHtml() {
         </div>
         <div class="features-grid">
           <div class="feature-card" id="reminders">
-            <div class="feature-icon-wrap">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            </div>
+            <div class="feature-icon-wrap">${Icons.mail}</div>
             <h3 class="feature-title">Automated Daily Reminders</h3>
             <p class="feature-text">Team members receive personalized email digests via Microsoft Graph summarizing overdue, due today, and upcoming priorities.</p>
           </div>
-
           <div class="feature-card">
-            <div class="feature-icon-wrap">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </div>
+            <div class="feature-icon-wrap">${Icons.team}</div>
             <h3 class="feature-title">Microsoft Teams Summaries</h3>
             <p class="feature-text">Post consolidated daily status cards into your Microsoft Teams channel so the entire squad has full visibility at the close of every day.</p>
           </div>
-
           <div class="feature-card">
-            <div class="feature-icon-wrap">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-            </div>
+            <div class="feature-icon-wrap">${Icons.msLogo(20)}</div>
             <h3 class="feature-title">Frictionless Microsoft SSO</h3>
             <p class="feature-text">Sign in securely with your Microsoft Entra corporate account. Domain restrictions ensure seamless access exclusively for verified members.</p>
           </div>
-
           <div class="feature-card" id="security">
-            <div class="feature-icon-wrap">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            </div>
+            <div class="feature-icon-wrap">${Icons.pulse(20)}</div>
             <h3 class="feature-title">Enterprise Security</h3>
             <p class="feature-text">Equipped with bcrypt password hashing, IP and username brute-force lockout safeguards, and complete audit logging.</p>
           </div>
         </div>
       </section>
 
-      <!-- Workflow Section -->
       <section id="workflow" class="landing-section">
         <div class="section-header">
           <div class="section-tag">Simple 3-Step Workflow</div>
@@ -213,30 +707,12 @@ function landingPageHtml() {
           </div>
         </div>
       </section>
-
-      <!-- Security Banner -->
-      <section class="landing-section landing-section-alt" style="padding-top:40px;padding-bottom:60px">
-        <div class="security-banner">
-          <div>
-            <h3 class="security-title">Ready to keep your team aligned?</h3>
-            <p class="security-desc">Sign in with your corporate Microsoft account to view your active board, or authenticate with team credentials.</p>
-          </div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            <a class="btn-ms-inline" href="/api/auth-microsoft" style="background:#ffffff">
-              ${msLogoSvg(18)}
-              <span>Sign in with Microsoft</span>
-            </a>
-            <button class="btn btn-primary" data-action="open-login">Sign in with Password</button>
-          </div>
-        </div>
-      </section>
     </main>
 
-    <!-- Footer -->
     <footer class="landing-footer">
       <div class="footer-inner">
-        <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--ink-2)">
-          <div class="brand-icon-wrap" style="width:26px;height:26px">${pulseLogoSvg(15)}</div>
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--ink)">
+          <div class="brand-icon-wrap" style="width:26px;height:26px">${Icons.pulse(15)}</div>
           <span>Team Pulse</span>
         </div>
         <div class="footer-links">
@@ -251,433 +727,662 @@ function landingPageHtml() {
   </div>`;
 }
 
-// ---------- Login Modal ----------
-function loginModalHtml(errorMsg) {
-  const params = new URLSearchParams(location.search);
-  const ssoError = params.get('ssoError');
-  const msg = errorMsg || (ssoError ? ssoErrorText(ssoError) : '');
-  return `
-  <div class="modal-backdrop">
-    <div class="modal" style="width:400px">
-      <div class="modal-head">
-        <div>
-          <p class="modal-title" style="margin:0 0 4px">Sign in to Team Pulse</p>
-          <p style="font-size:13px;color:var(--mute);margin:0">Enter your credentials to access your board.</p>
-        </div>
-        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
-      </div>
-      ${msg ? `<div class="err-msg" style="margin-top:14px">${esc(msg)}</div>` : ''}
-      <form id="loginForm" style="margin-top:16px">
-        <div class="field"><label>Username</label><input name="username" autocomplete="username" required autofocus /></div>
-        <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required /></div>
-        <button class="btn btn-primary" style="width:100%;margin-top:6px" type="submit">Sign in</button>
-      </form>
-      <div class="divider">or</div>
-      <a class="btn-ms-inline" href="/api/auth-microsoft" style="width:100%;justify-content:center;padding:10px 14px">
-        ${msLogoSvg(18)}
-        <span>Sign in with Microsoft</span>
-      </a>
-    </div>
-  </div>`;
-}
+// ============================================================================
+// DOM LIFECYCLE & TARGETED RENDERING ENGINE
+// ============================================================================
 
-function ssoErrorText(code) {
-  if (code === 'not_authorized') return 'Your Microsoft account isn\'t on the Team Pulse user list. Ask an admin to add you.';
-  if (code === 'not_configured') return 'Microsoft sign-in isn\'t configured yet on this server.';
-  if (code.startsWith('msft_')) return 'Microsoft sign-in was cancelled or blocked.';
-  return 'Microsoft sign-in failed. Please try again or use your password.';
-}
+let isAppShellMounted = false;
 
-// ---------- Shell + board ----------
-function shellHtml() {
-  const isAdmin = S.user.role === 'admin';
-  const canSendEmail = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'].includes((S.user.email || '').toLowerCase());
-  return `
-  <div class="topbar">
-    <div style="display:flex;align-items:center;gap:10px">
-      <div class="brand-icon-wrap" style="width:30px;height:30px">${pulseLogoSvg(18)}</div>
-      <div class="brand">Team Pulse</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:13px;font-weight:500;color:var(--ink-2)">${esc(S.user.name)}</span>
-        <span class="role-pill" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--pill);background:${isAdmin ? 'var(--blue-hi)' : 'var(--line-2)'};color:${isAdmin ? 'var(--blue)' : 'var(--mute)'}">${isAdmin ? 'Admin' : 'Member'}</span>
-      </div>
-      ${isAdmin ? `<button class="btn btn-secondary" data-action="open-admin">Team</button>` : ''}
-      <button class="btn btn-secondary" data-action="logout">Sign out</button>
-    </div>
-  </div>
-  <div class="main">
-    <div class="toolbar">
-      <div class="filters">
-        <select data-filter="assignee">
-          <option value="all">Everyone</option>
-          ${S.users.map(u => `<option value="${u.id}" ${S.filter.assignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
-        </select>
-        <select data-filter="status">
-          <option value="all">All statuses</option>
-          <option value="open" ${S.filter.status === 'open' ? 'selected' : ''}>Open</option>
-          <option value="in_progress" ${S.filter.status === 'in_progress' ? 'selected' : ''}>In progress</option>
-          <option value="done" ${S.filter.status === 'done' ? 'selected' : ''}>Done</option>
-        </select>
-      </div>
-      ${canSendEmail ? '<button class="btn btn-secondary" data-action="open-email">Send email</button>' : ''}
-      <button class="btn btn-primary" data-action="new-task">+ Add task</button>
-    </div>
-    ${boardHtml()}
-  </div>`;
-}
+function renderApp() {
+  const root = document.getElementById('app');
+  const state = S_STORE.getState();
+  const isAuthenticated = !!state.auth.user;
 
-function filteredTasks() {
-  return S.tasks.filter(t => {
-    if (S.filter.assignee !== 'all' && t.assignee_id !== S.filter.assignee) return false;
-    if (S.filter.status !== 'all' && t.status !== S.filter.status) return false;
-    return true;
-  });
-}
-
-function boardHtml() {
-  const tasks = filteredTasks();
-  const cols = [
-    ['open', 'Open'],
-    ['in_progress', 'In Progress'],
-    ['done', 'Done'],
-  ];
-  return `<div class="board">
-    ${cols.map(([key, label]) => {
-      const list = tasks.filter(t => t.status === key);
-      return `<div class="col">
-        <div class="col-head"><span>${label}</span><span class="count-pill">${list.length}</span></div>
-        ${list.length ? list.map(taskCardHtml).join('') : `<div class="empty-hint">Nothing here</div>`}
-      </div>`;
-    }).join('')}
-  </div>`;
-}
-
-function taskCardHtml(t) {
-  const today = todayStr();
-  let dueBadge = '';
-  if (t.due_date && t.status !== 'done') {
-    if (t.due_date < today) dueBadge = `<span class="badge badge-overdue">Overdue</span>`;
-    else if (t.due_date === today) dueBadge = `<span class="badge badge-today">Due today</span>`;
+  if (!isAuthenticated) {
+    isAppShellMounted = false;
+    root.innerHTML = `
+      <div id="landingView">${renderLandingPage()}</div>
+      <div id="modalHost">${renderModal()}</div>
+      <div id="toastHost" class="toast-container" aria-live="polite">${renderToasts()}</div>
+    `;
+    setupModalFocusTrap();
+    return;
   }
-  return `<div class="task-card" data-task-id="${t.id}">
-    <div class="task-title">${esc(t.title)}</div>
-    <div class="task-meta">
-      <span>${esc(userName(t.assignee_id))}</span>
-      ${t.due_date ? `<span>· ${esc(t.due_date)}</span>` : ''}
-      ${t.priority === 'high' ? `<span class="badge badge-high">High</span>` : ''}
-      ${dueBadge}
-    </div>
-    <div class="task-actions">
-      ${t.status !== 'done' ? `<button class="icon-btn" data-action="advance-task" data-id="${t.id}" data-next="${t.status === 'open' ? 'in_progress' : 'done'}">${t.status === 'open' ? 'Start' : 'Complete'}</button>` : ''}
-      <button class="icon-btn" data-action="edit-task" data-id="${t.id}">Edit</button>
-      <button class="icon-btn btn-danger" data-action="delete-task" data-id="${t.id}">Delete</button>
-    </div>
-  </div>`;
+
+  if (!isAppShellMounted) {
+    isAppShellMounted = true;
+    root.innerHTML = `
+      <div id="headerHost">${renderHeader()}</div>
+      <main class="main-container">
+        <div id="summaryHost">${renderSummaryMetrics()}</div>
+        <div id="toolbarHost">${renderToolbar()}</div>
+        <div id="mobileTabsHost">${renderMobileTabs()}</div>
+        <div id="boardHost">${state.ui.isInitialLoading ? renderSkeletons() : renderBoard()}</div>
+      </main>
+      <div id="modalHost">${renderModal()}</div>
+      <div id="toastHost" class="toast-container" aria-live="polite">${renderToasts()}</div>
+    `;
+    setupModalFocusTrap();
+    setupDragAndDrop();
+    return;
+  }
+
+  // Targeted Component Updates without Full DOM Destruction
+  updateHeaderDom();
+  updateSummaryDom();
+  updateToolbarDom();
+  updateMobileTabsDom();
+  updateBoardDom();
+  updateModalDom();
+  updateToastsDom();
 }
 
-// ---------- Task modal ----------
-function taskModalHtml(editing) {
-  return `<div class="modal-backdrop">
-    <div class="modal">
-      <div class="modal-head">
-        <p class="modal-title">${editing ? 'Edit task' : 'New task'}</p>
-        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
-      </div>
-      <form id="taskForm">
-        <div class="field"><label>Title</label><input name="title" value="${esc(editing?.title || '')}" required /></div>
-        <div class="field"><label>Description</label><textarea name="description" rows="3">${esc(editing?.description || '')}</textarea></div>
-        <div class="field"><label>Assignee</label>
-          <select name="assigneeId">
-            <option value="">Unassigned</option>
-            ${S.users.map(u => `<option value="${u.id}" ${editing?.assignee_id === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field"><label>Due date</label><input type="date" name="dueDate" value="${editing?.due_date || ''}" /></div>
-        <div class="field"><label>Priority</label>
-          <select name="priority">
-            <option value="low" ${editing?.priority === 'low' ? 'selected' : ''}>Low</option>
-            <option value="normal" ${(!editing || editing?.priority === 'normal') ? 'selected' : ''}>Normal</option>
-            <option value="high" ${editing?.priority === 'high' ? 'selected' : ''}>High</option>
-          </select>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-secondary modal-cancel" data-action="close-modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">${editing ? 'Save' : 'Create'}</button>
-        </div>
-      </form>
-    </div>
-  </div>`;
+function updateHeaderDom() {
+  const el = document.getElementById('headerHost');
+  if (el) el.innerHTML = renderHeader();
 }
 
-function emailModalHtml() {
-  return `<div class="modal-backdrop">
-    <div class="modal">
-      <div class="modal-head">
-        <p class="modal-title">Send email</p>
-        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
-      </div>
-      <form id="emailForm">
-        <div class="field"><label>Send from</label><select name="sender">
-          <option value="mayank@kognozconsulting.com">Mayank</option>
-          <option value="yashwanth.krishna@kognozconsulting.com">Yashwanth</option>
-        </select></div>
-        <div class="field"><label>To</label><input name="to" type="email" required /></div>
-        <div class="field"><label>Subject</label><input name="subject" required /></div>
-        <div class="field"><label>Message</label><textarea name="body" rows="5" required></textarea></div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-secondary modal-cancel" data-action="close-modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Send</button>
-        </div>
-      </form>
-    </div>
-  </div>`;
+function updateSummaryDom() {
+  const el = document.getElementById('summaryHost');
+  if (el) el.innerHTML = renderSummaryMetrics();
 }
 
-// ---------- Admin / roster modal ----------
-function adminModalHtml() {
-  return `<div class="modal-backdrop">
-    <div class="modal" style="width:520px">
-      <div class="modal-head">
-        <p class="modal-title">Team Management</p>
-        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
-      </div>
-      <div id="rosterList">
-        ${S.users.map(u => `<div class="roster-row">
-          <div><strong style="font-size:14px">${esc(u.name)}</strong> <span class="role-pill">${u.role}</span><br/><span style="font-size:12px;color:var(--mute)">${esc(u.email)}</span></div>
-          <button class="icon-btn btn-danger" data-action="remove-user" data-id="${u.id}" ${u.id === S.user.id ? 'disabled' : ''}>Remove</button>
-        </div>`).join('')}
-      </div>
-      <p class="modal-title" style="font-size:14px;margin-top:20px">Add team member</p>
-      <form id="userForm">
-        <div class="field"><label>Full name</label><input name="name" required /></div>
-        <div class="field"><label>Username</label><input name="username" required /></div>
-        <div class="field"><label>Email (also used for Microsoft SSO match)</label><input name="email" type="email" required /></div>
-        <div class="field"><label>Temporary password (min 8 chars)</label><input name="password" type="password" minlength="8" required /></div>
-        <div class="field"><label>Role</label>
-          <select name="role"><option value="member">Member</option><option value="admin">Admin</option></select>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-secondary modal-cancel" data-action="close-modal">Close</button>
-          <button type="submit" class="btn btn-primary">Add member</button>
-        </div>
-      </form>
-    </div>
-  </div>`;
+function updateToolbarDom() {
+  const el = document.getElementById('toolbarHost');
+  if (!el) return;
+  // If search input is focused, don't replace the input element to preserve cursor position
+  const activeInput = document.activeElement;
+  const isSearchFocused = activeInput && activeInput.id === 'taskSearchInput';
+  if (!isSearchFocused) {
+    el.innerHTML = renderToolbar();
+  }
 }
 
-function renderModal() {
-  const el = document.createElement('div');
-  el.id = 'modalRoot';
-  if (modalState.type === 'login') {
-    el.innerHTML = loginModalHtml(modalState.error);
-  } else if (modalState.type === 'task') {
-    el.innerHTML = taskModalHtml(modalState.editing);
-  } else if (modalState.type === 'email') {
-    el.innerHTML = emailModalHtml();
+function updateMobileTabsDom() {
+  const el = document.getElementById('mobileTabsHost');
+  if (el) el.innerHTML = renderMobileTabs();
+}
+
+function updateBoardDom() {
+  const el = document.getElementById('boardHost');
+  const state = S_STORE.getState();
+  if (el) {
+    el.innerHTML = state.ui.isInitialLoading ? renderSkeletons() : renderBoard();
+    setupDragAndDrop();
+  }
+}
+
+function updateModalDom() {
+  const el = document.getElementById('modalHost');
+  if (el) {
+    el.innerHTML = renderModal();
+    setupModalFocusTrap();
+  }
+}
+
+function updateToastsDom() {
+  const el = document.getElementById('toastHost');
+  if (el) el.innerHTML = renderToasts();
+}
+
+// Subscribe Store Updates to Targeted DOM Nodes
+S_STORE.subscribe((state, domain) => {
+  if (domain === 'auth') {
+    renderApp();
+  } else if (domain === 'tasks') {
+    updateSummaryDom();
+    updateBoardDom();
+    updateMobileTabsDom();
+  } else if (domain === 'users') {
+    updateToolbarDom();
+    updateBoardDom();
+    if (state.ui.modal?.type === 'user') updateModalDom();
+  } else if (domain === 'filters') {
+    updateBoardDom();
+    updateMobileTabsDom();
+    updateToolbarDom();
+  } else if (domain === 'ui') {
+    updateModalDom();
+    updateMobileTabsDom();
+    if (state.ui.isInitialLoading !== undefined) updateBoardDom();
+  } else if (domain === 'toasts') {
+    updateToastsDom();
   } else {
-    el.innerHTML = adminModalHtml();
+    renderApp();
   }
-  document.body.appendChild(el);
-  el.querySelectorAll('[data-action="close-modal"]').forEach(button => {
-    button.addEventListener('click', closeModal);
+});
+
+// ============================================================================
+// HTML5 DRAG AND DROP HANDLERS
+// ============================================================================
+
+let draggedTaskId = null;
+
+function setupDragAndDrop() {
+  const cards = document.querySelectorAll('.task-card[draggable="true"]');
+  const cols = document.querySelectorAll('.kanban-col');
+
+  cards.forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      draggedTaskId = card.dataset.taskId;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedTaskId);
+    });
+
+    card.addEventListener('dragend', () => {
+      draggedTaskId = null;
+      card.classList.remove('dragging');
+      cols.forEach(c => c.classList.remove('drag-over'));
+    });
   });
-  el.querySelector('.modal-backdrop').addEventListener('click', (event) => {
-    if (event.target === event.currentTarget) closeModal();
+
+  cols.forEach(col => {
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('drag-over');
+    });
+
+    col.addEventListener('dragleave', (e) => {
+      if (!col.contains(e.relatedTarget)) {
+        col.classList.remove('drag-over');
+      }
+    });
+
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
+      const targetStatus = col.dataset.colStatus;
+
+      if (!taskId || !targetStatus) return;
+
+      const task = S_STORE.getState().server.tasks.find(t => t.id === taskId);
+      if (!task || task.status === targetStatus) return;
+
+      await handleAdvanceTaskOptimistic(taskId, targetStatus);
+    });
   });
 }
-function closeModal() {
-  modalState = null;
-  const el = document.getElementById('modalRoot');
-  if (el) el.remove();
-}
 
-// ---------- Data loading ----------
-async function loadData() {
-  const [u, t] = await Promise.all([api('/api/users'), api('/api/tasks')]);
-  S.users = u.users; S.tasks = t.tasks;
-  if (S.user) {
-    const updatedSelf = u.users.find(x => x.id === S.user.id);
-    if (updatedSelf) {
-      S.user = { ...S.user, ...updatedSelf };
-      localStorage.setItem('tp_user', JSON.stringify(S.user));
-    }
+// ============================================================================
+// OPTIMISTIC MUTATION CONTROLLERS
+// ============================================================================
+
+async function handleAdvanceTaskOptimistic(taskId, newStatus) {
+  const task = S_STORE.getState().server.tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  const prevStatus = task.status;
+  const rollback = S_STORE.optimisticUpdateTask(taskId, { status: newStatus });
+  const statusLabel = newStatus === 'in_progress' ? 'In Progress' : newStatus === 'done' ? 'Done' : 'Open';
+
+  S_STORE.addToast({
+    type: 'success',
+    title: 'Task Updated',
+    message: `"${task.title}" moved to ${statusLabel}`,
+    duration: 3000,
+  });
+
+  try {
+    const res = await api(`/api/tasks?id=${encodeURIComponent(taskId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus }),
+    });
+    // Replace with authoritative server payload
+    if (res.task) S_STORE.reconcileTask(taskId, res.task);
+  } catch (err) {
+    rollback();
+    S_STORE.addToast({
+      type: 'error',
+      title: 'Action Failed',
+      message: err.message || 'Could not update task status. Reverted.',
+      duration: 5000,
+    });
   }
 }
 
-// ---------- Init ----------
-async function init() {
-  // SSO ticket hand-off: exchange the short-lived ticket for a real session
-  // token, then strip it from the URL so it never lingers in browser history.
-  const params = new URLSearchParams(location.search);
-  const ticket = params.get('ssoTicket');
-  if (ticket) {
-    try {
-      const data = await api('/api/auth-microsoft', { method: 'POST', body: JSON.stringify({ ticket }) });
-      setSession(data.token, data.user);
-    } catch (err) {
-      toast(err.message);
-    }
-    history.replaceState({}, '', location.pathname);
-  }
+async function handleDeleteTaskOptimistic(taskId) {
+  const task = S_STORE.getState().server.tasks.find(t => t.id === taskId);
+  if (!task) return;
 
-  const ssoError = params.get('ssoError');
-  if (ssoError && !S.user) {
-    modalState = { type: 'login', error: ssoErrorText(ssoError) };
-    history.replaceState({}, '', location.pathname);
-  }
+  if (!confirm(`Are you sure you want to delete "${task.title}"?`)) return;
 
-  if (S.token && !S.user) {
-    S.user = JSON.parse(localStorage.getItem('tp_user') || 'null');
+  const rollback = S_STORE.optimisticDeleteTask(taskId);
+  S_STORE.addToast({
+    type: 'info',
+    title: 'Task Deleted',
+    message: `"${task.title}" has been deleted.`,
+    duration: 3000,
+  });
+
+  try {
+    await api(`/api/tasks?id=${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+  } catch (err) {
+    rollback();
+    S_STORE.addToast({
+      type: 'error',
+      title: 'Delete Failed',
+      message: err.message || 'Could not delete task on server.',
+      duration: 5000,
+    });
   }
-  if (S.token && S.user) {
-    try {
-      await loadData();
-    } catch {
-      clearSession();
-    }
-  }
-  render();
 }
 
-// ---------- Event delegation ----------
-document.addEventListener('submit', async (e) => {
-  if (e.target.id === 'loginForm') {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      const data = await api('/api/login', { method: 'POST', body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }) });
-      setSession(data.token, data.user);
-      closeModal();
-      await loadData();
-      render();
-    } catch (err) {
-      modalState = { type: 'login', error: err.message };
-      renderModal_replace();
+// ============================================================================
+// ACCESSIBILITY: MODAL FOCUS TRAP & KEYBOARD SHORTCUTS
+// ============================================================================
+
+let previousActiveElement = null;
+
+function setupModalFocusTrap() {
+  const modalBox = document.getElementById('activeModalBox');
+  if (!modalBox) {
+    if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+      previousActiveElement.focus();
+      previousActiveElement = null;
     }
     return;
   }
 
+  previousActiveElement = document.activeElement;
+  const focusables = modalBox.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (!focusables.length) return;
+
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+
+  setTimeout(() => first.focus(), 50);
+
+  modalBox.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (S_STORE.getState().ui.modal) {
+      S_STORE.closeModal();
+    }
+  }
+});
+
+// ============================================================================
+// CENTRAL EVENT DELEGATION
+// ============================================================================
+
+// Search Debounce Handler
+const handleSearchDebounced = debounce((value) => {
+  S_STORE.setFilter('search', value);
+}, 200);
+
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'taskSearchInput') {
+    handleSearchDebounced(e.target.value);
+  }
+});
+
+// Filter Dropdown Change Handler
+document.addEventListener('change', (e) => {
+  if (e.target.dataset && e.target.dataset.filter) {
+    S_STORE.setFilter(e.target.dataset.filter, e.target.value);
+  }
+});
+
+// Form Submissions
+document.addEventListener('submit', async (e) => {
+  // Login Form
+  if (e.target.id === 'loginForm') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const username = fd.get('username');
+    const password = fd.get('password');
+
+    S_STORE.setSubmitting('login', true);
+    try {
+      const data = await api('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      });
+      S_STORE.setAuth(data.token, data.user);
+      S_STORE.closeModal();
+      S_STORE.addToast({
+        type: 'success',
+        title: 'Welcome Back',
+        message: `Signed in as ${data.user.name}`,
+      });
+      await loadInitialData();
+    } catch (err) {
+      S_STORE.openModal('login', null, err.message);
+    } finally {
+      S_STORE.setSubmitting('login', false);
+    }
+    return;
+  }
+
+  // Task Form (Create / Edit)
   if (e.target.id === 'taskForm') {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const body = {
+    const modal = S_STORE.getState().ui.modal;
+    const editing = modal?.editing;
+    const isEdit = !!editing;
+
+    const payload = {
       title: fd.get('title'),
       description: fd.get('description') || null,
       assigneeId: fd.get('assigneeId') || null,
       dueDate: fd.get('dueDate') || null,
-      priority: fd.get('priority'),
+      priority: fd.get('priority') || 'normal',
     };
-    try {
-      if (modalState.editing) {
-        await api(`/api/tasks?id=${modalState.editing.id}`, { method: 'PATCH', body: JSON.stringify(body) });
-      } else {
-        await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
+
+    if (isEdit) {
+      // Optimistic Edit
+      const rollback = S_STORE.optimisticUpdateTask(editing.id, {
+        title: payload.title,
+        description: payload.description,
+        assignee_id: payload.assigneeId,
+        due_date: payload.dueDate,
+        priority: payload.priority,
+      });
+
+      S_STORE.closeModal();
+      S_STORE.addToast({ type: 'success', title: 'Task Saved', message: `"${payload.title}" has been updated.` });
+
+      try {
+        const res = await api(`/api/tasks?id=${encodeURIComponent(editing.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        if (res.task) S_STORE.reconcileTask(editing.id, res.task);
+      } catch (err) {
+        rollback();
+        S_STORE.addToast({ type: 'error', title: 'Save Failed', message: err.message });
       }
-      await loadData();
-      closeModal();
-      render();
-      toast('Saved');
-    } catch (err) { toast(err.message); }
+    } else {
+      // Optimistic Create
+      const tempId = 'temp_' + Math.random().toString(36).slice(2, 9);
+      const tempTask = {
+        id: tempId,
+        title: payload.title,
+        description: payload.description,
+        assignee_id: payload.assigneeId,
+        due_date: payload.dueDate,
+        priority: payload.priority,
+        status: editing?._initialStatus || 'open',
+        created_at: new Date().toISOString(),
+      };
+
+      const rollback = S_STORE.optimisticAddTask(tempTask);
+      S_STORE.closeModal();
+      S_STORE.addToast({ type: 'success', title: 'Task Created', message: `"${payload.title}" added to board.` });
+
+      try {
+        const res = await api('/api/tasks', {
+          method: 'POST',
+          body: JSON.stringify({ ...payload, status: tempTask.status }),
+        });
+        if (res.task) S_STORE.reconcileTask(tempId, res.task);
+      } catch (err) {
+        rollback();
+        S_STORE.addToast({ type: 'error', title: 'Creation Failed', message: err.message });
+      }
+    }
     return;
   }
 
+  // User Form (Admin Create User)
   if (e.target.id === 'userForm') {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const body = {
+      name: fd.get('name'),
+      username: fd.get('username'),
+      email: fd.get('email'),
+      password: fd.get('password'),
+      role: fd.get('role'),
+    };
+
+    S_STORE.setSubmitting('user', true);
     try {
-      await api('/api/users', { method: 'POST', body: JSON.stringify({
-        name: fd.get('name'), username: fd.get('username'), email: fd.get('email'),
-        password: fd.get('password'), role: fd.get('role'),
-      }) });
-      await loadData();
-      closeModal();
-      modalState = { type: 'user' };
-      renderModal();
-      toast('Team member added');
-    } catch (err) { toast(err.message); }
+      const res = await api('/api/users', { method: 'POST', body: JSON.stringify(body) });
+      if (res.user) S_STORE.addUser(res.user);
+      S_STORE.addToast({ type: 'success', title: 'Team Member Added', message: `${body.name} has been added.` });
+      // Keep modal open on member list
+      S_STORE.openModal('user');
+    } catch (err) {
+      S_STORE.openModal('user', null, err.message);
+    } finally {
+      S_STORE.setSubmitting('user', false);
+    }
     return;
   }
 
+  // Email Form
   if (e.target.id === 'emailForm') {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const body = {
+      sender: fd.get('sender'),
+      to: fd.get('to'),
+      subject: fd.get('subject'),
+      body: fd.get('body'),
+    };
+
+    S_STORE.setSubmitting('email', true);
     try {
-      await api('/api/test-email', { method: 'POST', body: JSON.stringify({
-        sender: fd.get('sender'), to: fd.get('to'), subject: fd.get('subject'), body: fd.get('body'),
-      }) });
-      closeModal();
-      toast('Email sent');
-    } catch (err) { toast(err.message); }
+      await api('/api/test-email', { method: 'POST', body: JSON.stringify(body) });
+      S_STORE.closeModal();
+      S_STORE.addToast({ type: 'success', title: 'Email Dispatched', message: `Sent to ${body.to}` });
+    } catch (err) {
+      S_STORE.openModal('email', null, err.message);
+    } finally {
+      S_STORE.setSubmitting('email', false);
+    }
     return;
   }
 });
 
-document.addEventListener('change', (e) => {
-  if (e.target.dataset && e.target.dataset.filter) {
-    S.filter[e.target.dataset.filter] = e.target.value;
-    render();
-  }
-});
-
+// Click Delegations
 document.addEventListener('click', async (e) => {
+  // Backdrop click closes modal
+  if (e.target.id === 'activeModalBackdrop') {
+    S_STORE.closeModal();
+    return;
+  }
+
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   const action = btn.dataset.action;
 
-  if (action === 'logout') { clearSession(); render(); return; }
-  if (action === 'open-login') { modalState = { type: 'login' }; renderModal(); return; }
-  if (action === 'new-task') { modalState = { type: 'task', editing: null }; renderModal(); return; }
-  if (action === 'open-admin') { modalState = { type: 'user' }; renderModal(); return; }
-  if (action === 'open-email') { modalState = { type: 'email' }; renderModal(); return; }
-  if (action === 'close-modal' && (
-    btn.classList.contains('modal-backdrop') ||
-    btn.classList.contains('modal-close') ||
-    btn.classList.contains('modal-cancel')
-  )) { closeModal(); return; }
-
-  if (action === 'edit-task') {
-    const task = S.tasks.find(t => t.id === btn.dataset.id);
-    modalState = { type: 'task', editing: task };
-    renderModal();
+  if (action === 'close-modal') {
+    S_STORE.closeModal();
     return;
   }
 
-  if (action === 'advance-task') {
-    try {
-      await api(`/api/tasks?id=${btn.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.next }) });
-      await loadData();
-      render();
-    } catch (err) { toast(err.message); }
+  if (action === 'open-login') {
+    S_STORE.openModal('login');
+    return;
+  }
+
+  if (action === 'logout') {
+    S_STORE.clearAuth();
+    S_STORE.addToast({ type: 'info', title: 'Signed Out', message: 'You have been signed out safely.' });
+    return;
+  }
+
+  if (action === 'new-task') {
+    S_STORE.openModal('task', null);
+    return;
+  }
+
+  if (action === 'quick-add-task') {
+    const status = btn.dataset.status || 'open';
+    S_STORE.openModal('task', { _initialStatus: status });
+    return;
+  }
+
+  if (action === 'edit-task') {
+    const task = S_STORE.getState().server.tasks.find(t => t.id === btn.dataset.id);
+    if (task) S_STORE.openModal('task', task);
     return;
   }
 
   if (action === 'delete-task') {
-    if (!confirm('Delete this task?')) return;
-    try {
-      await api(`/api/tasks?id=${btn.dataset.id}`, { method: 'DELETE' });
-      await loadData();
-      render();
-    } catch (err) { toast(err.message); }
+    await handleDeleteTaskOptimistic(btn.dataset.id);
+    return;
+  }
+
+  if (action === 'advance-task') {
+    await handleAdvanceTaskOptimistic(btn.dataset.id, btn.dataset.next);
+    return;
+  }
+
+  if (action === 'open-admin') {
+    S_STORE.openModal('user');
+    return;
+  }
+
+  if (action === 'open-email') {
+    S_STORE.openModal('email');
+    return;
+  }
+
+  if (action === 'clear-search') {
+    S_STORE.setFilter('search', '');
+    const input = document.getElementById('taskSearchInput');
+    if (input) input.value = '';
+    return;
+  }
+
+  if (action === 'reset-filters') {
+    S_STORE.resetFilters();
+    const input = document.getElementById('taskSearchInput');
+    if (input) input.value = '';
+    return;
+  }
+
+  if (action === 'set-mobile-col') {
+    S_STORE.setActiveMobileCol(btn.dataset.col);
+    return;
+  }
+
+  if (action === 'dismiss-toast') {
+    S_STORE.removeToast(btn.dataset.id);
     return;
   }
 
   if (action === 'remove-user') {
-    if (!confirm('Remove this team member?')) return;
+    const userId = btn.dataset.id;
+    const user = S_STORE.getState().server.users.find(u => u.id === userId);
+    if (!user) return;
+    if (!confirm(`Are you sure you want to remove team member ${user.name}?`)) return;
+
     try {
-      await api(`/api/users?id=${btn.dataset.id}`, { method: 'DELETE' });
-      await loadData();
-      renderModal_replace();
-    } catch (err) { toast(err.message); }
+      await api(`/api/users?id=${encodeURIComponent(userId)}`, { method: 'DELETE' });
+      S_STORE.removeUser(userId);
+      S_STORE.addToast({ type: 'success', title: 'Member Removed', message: `${user.name} was removed from the team.` });
+    } catch (err) {
+      S_STORE.addToast({ type: 'error', title: 'Remove Failed', message: err.message });
+    }
     return;
   }
 });
 
-function renderModal_replace() {
-  const el = document.getElementById('modalRoot');
-  if (el) el.remove();
-  renderModal();
+// ============================================================================
+// DATA BOOTSTRAP & INITIALIZATION
+// ============================================================================
+
+async function loadInitialData() {
+  const token = S_STORE.getState().auth.token;
+  if (!token) {
+    S_STORE.setInitialLoading(false);
+    return;
+  }
+
+  S_STORE.setInitialLoading(true);
+  try {
+    const [uRes, tRes] = await Promise.all([
+      api('/api/users'),
+      api('/api/tasks'),
+    ]);
+    S_STORE.setUsers(uRes.users || []);
+    S_STORE.setTasks(tRes.tasks || []);
+
+    // Sync self user profile if updated on backend
+    const currentSelf = S_STORE.getState().auth.user;
+    if (currentSelf && uRes.users) {
+      const freshSelf = uRes.users.find(x => x.id === currentSelf.id);
+      if (freshSelf) S_STORE.updateUserSelf(freshSelf);
+    }
+  } catch (err) {
+    if (err.isAuthError) {
+      S_STORE.addToast({ type: 'warning', title: 'Session Expired', message: 'Please sign in to continue.' });
+    } else {
+      S_STORE.addToast({ type: 'error', title: 'Data Loading Error', message: err.message });
+    }
+  } finally {
+    S_STORE.setInitialLoading(false);
+  }
 }
 
+async function init() {
+  // Handle SSO Ticket Hand-off
+  const params = new URLSearchParams(location.search);
+  const ticket = params.get('ssoTicket');
+  if (ticket) {
+    try {
+      const data = await api('/api/auth-microsoft', {
+        method: 'POST',
+        body: JSON.stringify({ ticket }),
+      });
+      S_STORE.setAuth(data.token, data.user);
+      S_STORE.addToast({
+        type: 'success',
+        title: 'Microsoft Sign-in Successful',
+        message: `Welcome, ${data.user.name}`,
+      });
+    } catch (err) {
+      S_STORE.addToast({
+        type: 'error',
+        title: 'Sign-in Failed',
+        message: err.message || 'Microsoft authentication could not be completed.',
+      });
+    }
+    history.replaceState({}, '', location.pathname);
+  }
+
+  // Handle SSO Error redirects
+  const ssoError = params.get('ssoError');
+  if (ssoError && !S_STORE.getState().auth.user) {
+    let errorMsg = 'Microsoft sign-in failed. Please try again or use your password.';
+    if (ssoError === 'not_authorized') errorMsg = "Your Microsoft account isn't on the authorized domain or user roster.";
+    else if (ssoError === 'not_configured') errorMsg = "Microsoft sign-in is not yet configured on this server.";
+    else if (ssoError.startsWith('msft_')) errorMsg = 'Microsoft sign-in was cancelled or denied.';
+
+    S_STORE.openModal('login', null, errorMsg);
+    history.replaceState({}, '', location.pathname);
+  }
+
+  // Render Initial View
+  renderApp();
+
+  // Load live data if authenticated
+  if (S_STORE.getState().auth.user && S_STORE.getState().auth.token) {
+    await loadInitialData();
+  } else {
+    S_STORE.setInitialLoading(false);
+  }
+}
+
+// Start Application
 init();
