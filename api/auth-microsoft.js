@@ -132,8 +132,13 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
       return bounceToLogin(origin, 'not_authorized', `Login failed: Microsoft account (${azureEmail}) is outside the allowed domain`);
     }
 
-    // Existing users keep their configured role. New users are regular
-    // members and receive an unusable password for SSO-only access.
+    const DEFAULT_ADMINS = [
+      'mayank@kognozconsulting.com',
+      'yashwanth.krishna@kognozconsulting.com',
+    ];
+    const isDefaultAdmin = DEFAULT_ADMINS.includes(azureEmail.toLowerCase());
+
+    // Existing users keep their configured role (or upgraded to admin if in default admins).
     const sbHeaders = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
     const userRes = await fetch(
       `${SUPABASE_URL}/rest/v1/users?email=ilike.${encodeURIComponent(azureEmail)}&select=*&limit=1`,
@@ -148,6 +153,7 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
     if (!user) {
       const username = `msft_${crypto.createHash('sha256').update(azureEmail.toLowerCase()).digest('hex').slice(0, 24)}`;
       const password_hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), BCRYPT_COST);
+      const role = isDefaultAdmin ? 'admin' : 'member';
       const createRes = await fetch(`${SUPABASE_URL}/rest/v1/users`, {
         method: 'POST',
         headers: { ...sbHeaders, 'Content-Type': 'application/json', Prefer: 'return=representation' },
@@ -156,7 +162,7 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
           password_hash,
           name: me.displayName || azureEmail.split('@')[0],
           email: azureEmail,
-          role: 'member',
+          role,
         }),
       });
       if (!createRes.ok) {
@@ -167,6 +173,13 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
       const created = await createRes.json();
       user = created[0];
       await logAudit(env, { actorId: user.id, username: user.username, role: user.role, action: 'User auto-provisioned via Microsoft SSO', entity: 'user', screen: 'login', ip, userAgent });
+    } else if (isDefaultAdmin && user.role !== 'admin') {
+      user.role = 'admin';
+      await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(user.id)}`, {
+        method: 'PATCH',
+        headers: { ...sbHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'admin' }),
+      }).catch(() => {});
     }
 
     const iat = Date.now();

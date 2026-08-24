@@ -294,9 +294,15 @@ function shellHtml() {
   const canSendEmail = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'].includes((S.user.email || '').toLowerCase());
   return `
   <div class="topbar">
-    <div class="brand">Team Pulse</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="brand-icon-wrap" style="width:30px;height:30px">${pulseLogoSvg(18)}</div>
+      <div class="brand">Team Pulse</div>
+    </div>
     <div style="display:flex;align-items:center;gap:12px">
-      <span style="font-size:13px;color:var(--ink-3)">${esc(S.user.name)}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:500;color:var(--ink-2)">${esc(S.user.name)}</span>
+        <span class="role-pill" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--pill);background:${isAdmin ? 'var(--blue-hi)' : 'var(--line-2)'};color:${isAdmin ? 'var(--blue)' : 'var(--mute)'}">${isAdmin ? 'Admin' : 'Member'}</span>
+      </div>
       ${isAdmin ? `<button class="btn btn-secondary" data-action="open-admin">Team</button>` : ''}
       <button class="btn btn-secondary" data-action="logout">Sign out</button>
     </div>
@@ -377,7 +383,7 @@ function taskModalHtml(editing) {
     <div class="modal">
       <div class="modal-head">
         <p class="modal-title">${editing ? 'Edit task' : 'New task'}</p>
-        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">X</button>
+        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
       </div>
       <form id="taskForm">
         <div class="field"><label>Title</label><input name="title" value="${esc(editing?.title || '')}" required /></div>
@@ -408,7 +414,10 @@ function taskModalHtml(editing) {
 function emailModalHtml() {
   return `<div class="modal-backdrop">
     <div class="modal">
-      <p class="modal-title">Send email</p>
+      <div class="modal-head">
+        <p class="modal-title">Send email</p>
+        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+      </div>
       <form id="emailForm">
         <div class="field"><label>Send from</label><select name="sender">
           <option value="mayank@kognozconsulting.com">Mayank</option>
@@ -430,7 +439,10 @@ function emailModalHtml() {
 function adminModalHtml() {
   return `<div class="modal-backdrop">
     <div class="modal" style="width:520px">
-      <p class="modal-title">Team</p>
+      <div class="modal-head">
+        <p class="modal-title">Team Management</p>
+        <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+      </div>
       <div id="rosterList">
         ${S.users.map(u => `<div class="roster-row">
           <div><strong style="font-size:14px">${esc(u.name)}</strong> <span class="role-pill">${u.role}</span><br/><span style="font-size:12px;color:var(--mute)">${esc(u.email)}</span></div>
@@ -485,6 +497,13 @@ function closeModal() {
 async function loadData() {
   const [u, t] = await Promise.all([api('/api/users'), api('/api/tasks')]);
   S.users = u.users; S.tasks = t.tasks;
+  if (S.user) {
+    const updatedSelf = u.users.find(x => x.id === S.user.id);
+    if (updatedSelf) {
+      S.user = { ...S.user, ...updatedSelf };
+      localStorage.setItem('tp_user', JSON.stringify(S.user));
+    }
+  }
 }
 
 // ---------- Init ----------
