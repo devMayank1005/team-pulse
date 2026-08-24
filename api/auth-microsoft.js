@@ -6,11 +6,12 @@
 //   GET  /api/auth-microsoft?error=...&state=...   -> CALLBACK (cancelled/error)
 //   POST /api/auth-microsoft   { ticket }          -> EXCHANGE
 //
-// SECURITY GATE: signing in with Microsoft only proves the person controls
-// that Microsoft identity — it does NOT by itself grant access. Access
-// requires that identity's email to match an existing row in this app's
-// own users table (CALLBACK, step 3). No account is ever created here.
+// SECURITY GATE: signing in with Microsoft only grants access to accounts
+// from the configured tenant and email domain. Missing users are provisioned
+// as members with an unusable random password.
 
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { signToken, verifySignature } = require('./_auth');
 const { logAudit, clientIp } = require('./_audit');
 const { applyCors, ALLOWED_ORIGINS } = require('./_cors');
@@ -18,6 +19,7 @@ const { applyCors, ALLOWED_ORIGINS } = require('./_cors');
 const STATE_TTL_MS = 10 * 60 * 1000;
 const TICKET_TTL_MS = 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const BCRYPT_COST = 12;
 
 module.exports = async function handler(req, res) {
   applyCors(req, res, 'GET, POST, OPTIONS');
@@ -124,8 +126,14 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
     const azureEmail = (me.mail || me.userPrincipalName || '').trim();
     if (!azureEmail) return bounceToLogin(origin, 'no_email', 'Login failed: Microsoft account has no usable email');
 
-    // THE GATE — case-insensitive exact match against this app's own users
-    // table. No match, no login. Nothing gets created here.
+    const allowedDomain = (process.env.AZURE_ALLOWED_DOMAIN || 'kognozconsulting.com').trim().toLowerCase();
+    const emailParts = azureEmail.toLowerCase().split('@');
+    if (emailParts.length !== 2 || emailParts[1] !== allowedDomain) {
+      return bounceToLogin(origin, 'not_authorized', `Login failed: Microsoft account (${azureEmail}) is outside the allowed domain`);
+    }
+
+    // Existing users keep their configured role. New users are regular
+    // members and receive an unusable password for SSO-only access.
     const sbHeaders = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
     const userRes = await fetch(
       `${SUPABASE_URL}/rest/v1/users?email=ilike.${encodeURIComponent(azureEmail)}&select=*&limit=1`,
@@ -136,14 +144,34 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
       return bounceToLogin(origin, 'lookup_failed', 'Login failed: user lookup error');
     }
     const rows = await userRes.json();
-    if (!rows.length) {
-      return bounceToLogin(origin, 'not_authorized', `Login failed: Microsoft account (${azureEmail}) not in Team Pulse user list`);
+    let user = rows[0];
+    if (!user) {
+      const username = `msft_${crypto.createHash('sha256').update(azureEmail.toLowerCase()).digest('hex').slice(0, 24)}`;
+      const password_hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), BCRYPT_COST);
+      const createRes = await fetch(`${SUPABASE_URL}/rest/v1/users`, {
+        method: 'POST',
+        headers: { ...sbHeaders, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({
+          username,
+          password_hash,
+          name: me.displayName || azureEmail.split('@')[0],
+          email: azureEmail,
+          role: 'member',
+        }),
+      });
+      if (!createRes.ok) {
+        const body = await createRes.text().catch(() => '');
+        console.error('auth-microsoft (callback): automatic user creation failed:', createRes.status, body.slice(0, 300));
+        return bounceToLogin(origin, 'provision_failed', 'Login failed: could not create Team Pulse user');
+      }
+      const created = await createRes.json();
+      user = created[0];
+      await logAudit(env, { actorId: user.id, username: user.username, role: user.role, action: 'User auto-provisioned via Microsoft SSO', entity: 'user', screen: 'login', ip, userAgent });
     }
-    const user = rows[0];
 
     const iat = Date.now();
     const realToken = signToken({
-      id: user.id, username: user.username, role: user.role,
+      id: user.id, username: user.username, email: user.email, role: user.role,
       tokenVersion: user.token_version || 0, iat, exp: iat + SEVEN_DAYS_MS,
     }, SESSION_SECRET);
     const userOut = { id: user.id, username: user.username, name: user.name, email: user.email || '', role: user.role };

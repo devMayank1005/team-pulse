@@ -43,6 +43,7 @@ function ssoErrorText(code) {
 // ---------- Shell + board ----------
 function shellHtml() {
   const isAdmin = S.user.role === 'admin';
+  const canSendEmail = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'].includes((S.user.email || '').toLowerCase());
   return `
   <div class="topbar">
     <div class="brand">Team Pulse</div>
@@ -66,6 +67,7 @@ function shellHtml() {
           <option value="done" ${S.filter.status === 'done' ? 'selected' : ''}>Done</option>
         </select>
       </div>
+      ${canSendEmail ? '<button class="btn btn-secondary" data-action="open-email">Send email</button>' : ''}
       <button class="btn btn-primary" data-action="new-task">+ Add task</button>
     </div>
     ${boardHtml()}
@@ -152,6 +154,27 @@ function taskModalHtml(editing) {
   </div>`;
 }
 
+function emailModalHtml() {
+  return `<div class="modal-backdrop" data-action="close-modal">
+    <div class="modal" onclick="event.stopPropagation()">
+      <p class="modal-title">Send email</p>
+      <form id="emailForm">
+        <div class="field"><label>Send from</label><select name="sender">
+          <option value="mayank@kognozconsulting.com">Mayank</option>
+          <option value="yashwanth.krishna@kognozconsulting.com">Yashwanth</option>
+        </select></div>
+        <div class="field"><label>To</label><input name="to" type="email" required /></div>
+        <div class="field"><label>Subject</label><input name="subject" required /></div>
+        <div class="field"><label>Message</label><textarea name="body" rows="5" required></textarea></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>`;
+}
+
 // ---------- Admin / roster modal ----------
 function adminModalHtml() {
   return `<div class="modal-backdrop" data-action="close-modal">
@@ -184,7 +207,7 @@ function adminModalHtml() {
 function renderModal() {
   const el = document.createElement('div');
   el.id = 'modalRoot';
-  el.innerHTML = modalState.type === 'task' ? taskModalHtml(modalState.editing) : adminModalHtml();
+  el.innerHTML = modalState.type === 'task' ? taskModalHtml(modalState.editing) : modalState.type === 'email' ? emailModalHtml() : adminModalHtml();
   document.body.appendChild(el);
 }
 function closeModal() {
@@ -284,6 +307,19 @@ document.addEventListener('submit', async (e) => {
     } catch (err) { toast(err.message); }
     return;
   }
+
+  if (e.target.id === 'emailForm') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api('/api/test-email', { method: 'POST', body: JSON.stringify({
+        sender: fd.get('sender'), to: fd.get('to'), subject: fd.get('subject'), body: fd.get('body'),
+      }) });
+      closeModal();
+      toast('Email sent');
+    } catch (err) { toast(err.message); }
+    return;
+  }
 });
 
 document.addEventListener('change', (e) => {
@@ -301,6 +337,7 @@ document.addEventListener('click', async (e) => {
   if (action === 'logout') { clearSession(); render(); return; }
   if (action === 'new-task') { modalState = { type: 'task', editing: null }; renderModal(); return; }
   if (action === 'open-admin') { modalState = { type: 'user' }; renderModal(); return; }
+  if (action === 'open-email') { modalState = { type: 'email' }; renderModal(); return; }
   if (action === 'close-modal') { closeModal(); return; }
 
   if (action === 'edit-task') {

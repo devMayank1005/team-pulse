@@ -9,12 +9,13 @@
 // scope here — a channel post is the direct equivalent of Kora's pattern
 // of "one shared source of truth", and everyone sees where things stand).
 //
-// Needs: RESEND_API_KEY + REMINDER_FROM_EMAIL for email (Resend — swap the
-// sendEmail() body for any other provider's HTTP API if preferred).
+// Needs: Microsoft Graph application Mail.Send permission and the Azure
+// application credentials for email.
 // Needs: TEAMS_WEBHOOK_URL for the Teams post.
 // Both are optional independently — if only one is set, only that channel fires.
 
 const { logAudit } = require('../_audit');
+const { ALLOWED_SENDERS, normalizeSender, sendMicrosoftEmail } = require('../_mail');
 
 function sbHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}` };
@@ -81,16 +82,9 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-async function sendEmail({ to, subject, text, html }) {
-  const { RESEND_API_KEY, REMINDER_FROM_EMAIL } = process.env;
-  if (!RESEND_API_KEY || !REMINDER_FROM_EMAIL) return { skipped: true };
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: REMINDER_FROM_EMAIL, to: [to], subject, text, html }),
-  });
-  if (!r.ok) throw new Error(`Resend ${r.status}: ${(await r.text().catch(() => '')).slice(0, 200)}`);
-  return { skipped: false };
+async function sendEmail({ sender, to, subject, text, html }) {
+  if (!normalizeSender(sender)) return { skipped: true };
+  return sendMicrosoftEmail({ sender, to: [to], subject, text, html });
 }
 
 async function postTeamsSummary(perUser, appUrl) {
@@ -126,6 +120,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const sender = normalizeSender(req.query?.sender) || normalizeSender(process.env.AZURE_DEFAULT_MAIL_SENDER) || ALLOWED_SENDERS[0];
     const { tasks, byId } = await fetchPendingWithNames(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const grouped = {};
@@ -144,6 +139,7 @@ module.exports = async function handler(req, res) {
       perUser.push({ name: user.name, buckets });
       try {
         const result = await sendEmail({
+          sender,
           to: user.email,
           subject: `Team Pulse — ${buckets.overdue.length + buckets.dueToday.length} tasks need attention today`,
           text: renderPersonalSummaryText(user.name, buckets),

@@ -104,7 +104,7 @@ module.exports = async function handler(req, res) {
 
     const iat = Date.now();
     const token = signToken({
-      id: user.id, username: user.username, role: user.role,
+      id: user.id, username: user.username, email: user.email, role: user.role,
       tokenVersion: user.token_version || 0, iat, exp: iat + SEVEN_DAYS_MS,
     }, SESSION_SECRET);
 

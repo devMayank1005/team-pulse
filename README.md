@@ -15,7 +15,7 @@ Vercel Serverless Functions — /api/login, /api/auth-microsoft,
 Supabase Postgres — users · tasks · login_ip_throttle · audit_log
 ```
 
-- **Auth:** username/password (bcrypt cost 12, per-username + per-IP lockout) OR Microsoft Entra SSO. SSO only grants access if the Microsoft account's email matches an existing row in `users` — no account is ever auto-created.
+- **Auth:** username/password (bcrypt cost 12, per-username + per-IP lockout) OR Microsoft Entra SSO. SSO automatically creates a `member` account for users in the configured tenant and `AZURE_ALLOWED_DOMAIN`.
 - **Reminders:** a Vercel Cron job runs once a day, emails each assignee their own overdue/due-today/upcoming breakdown (via Resend), and posts one team-wide summary to a Microsoft Teams channel (via Incoming Webhook).
 - **Audit log:** every login, task change, and user change is recorded.
 
@@ -44,7 +44,11 @@ After first deploy, open `api/_cors.js` and replace the placeholder origin with 
 2. Redirect URI (Web): `https://<your-domain>/api/auth-microsoft`.
 3. **Certificates & secrets** → new client secret.
 4. Set env vars: `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` (Directory/tenant ID from the Overview page).
-5. Each team member's `email` column in Supabase must exactly match their Microsoft account's email/UPN, or their Microsoft sign-in will be rejected (by design — this is the access gate).
+5. Microsoft sign-in is limited to the configured tenant and email domain; users are automatically created as members on first sign-in.
+
+6. Set `AZURE_ALLOWED_DOMAIN` to your organization domain (default: `kognozconsulting.com`). The first Microsoft sign-in automatically creates a member account; admins can change the role later.
+
+7. To send mail through Microsoft Graph, grant the app the **Application** permission `Mail.Send` and grant admin consent. Set `AZURE_DEFAULT_MAIL_SENDER` to either `mayank@kognozconsulting.com` or `yashwanth.krishna@kognozconsulting.com`. Only those two accounts can initiate manual sends, and both addresses are the only permitted senders.
 
 ### 4. Email reminders (optional)
 1. Sign up at [resend.com](https://resend.com), verify a sending domain (or use their test domain while trying it out).
