@@ -3,7 +3,8 @@
 // block direct server-to-server calls — real access control is the
 // token + role checks in _auth.js. Add every real deploy/preview URL here.
 const ALLOWED_ORIGINS = [
-  'https://team-pulse.vercel.app', // placeholder — replace with your real Vercel domain(s)
+  'https://team-pulse-ruddy.vercel.app',
+  'https://team-pulse.vercel.app',
   'http://localhost:3000',
 ];
 
