@@ -83,7 +83,15 @@ module.exports = async function handler(req, res) {
       if (body.status !== undefined) {
         if (!STATUSES.includes(body.status)) return safeError(res, 400, 'invalid status');
         update.status = body.status;
-        update.completed_at = body.status === 'done' ? new Date().toISOString() : null;
+        if (body.status === 'done') {
+          // If status is transitioning to 'done', set completed_at unless already provided
+          update.completed_at = body.completedAt ? new Date(body.completedAt).toISOString() : new Date().toISOString();
+        } else {
+          // Moving back to open or in_progress clears completed_at
+          update.completed_at = null;
+        }
+      } else if (body.completedAt !== undefined) {
+        update.completed_at = body.completedAt ? new Date(body.completedAt).toISOString() : null;
       }
 
       const r = await fetch(`${SUPABASE_URL}/rest/v1/tasks?id=eq.${encodeURIComponent(id)}`, {
@@ -92,8 +100,17 @@ module.exports = async function handler(req, res) {
       if (!r.ok) return res.status(500).json({ error: 'Database error' });
       const rows = await r.json();
       if (!rows.length) return safeError(res, 404, 'Task not found');
-      await logAudit(env, { actorId: actor.id, username: actor.username, role: actor.role, action: `Updated task ${id}${body.status ? ` -> ${body.status}` : ''}`, entity: 'task', screen: 'tasks', ip, userAgent });
-      return res.status(200).json({ task: rows[0] });
+      const updatedTask = rows[0];
+
+      let actionDesc = `Updated task "${updatedTask.title || id}"`;
+      if (body.status === 'done') {
+        actionDesc = `Completed task "${updatedTask.title || id}"`;
+      } else if (body.status && body.status !== 'done') {
+        actionDesc = `Reopened task "${updatedTask.title || id}" -> ${body.status}`;
+      }
+
+      await logAudit(env, { actorId: actor.id, username: actor.username, role: actor.role, action: actionDesc, entity: 'task', screen: 'tasks', ip, userAgent });
+      return res.status(200).json({ task: updatedTask });
     }
 
     if (req.method === 'DELETE') {

@@ -14,6 +14,11 @@ const Icons = {
   mail: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
   team: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   logout: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+  board: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>`,
+  history: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+  activity: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+  rotateCcw: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`,
+  clock: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
   emptyTask: `<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>`,
 };
 
@@ -29,6 +34,8 @@ function renderHeader() {
 
   const isAdmin = user.role === 'admin';
   const canSendMail = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'].includes((user.email || '').toLowerCase());
+  const activeView = state.ui.activeView || 'board';
+  const completedCount = state.server.tasks.filter(t => t.status === 'done').length;
 
   return `
   <header class="topbar">
@@ -36,6 +43,18 @@ function renderHeader() {
       <div class="brand-icon-wrap">${Icons.pulse(18)}</div>
       <span class="brand-title">Team Pulse</span>
     </div>
+
+    <!-- Center Navigation Tabs -->
+    <nav class="view-nav-switcher" aria-label="Main Navigation">
+      <button class="nav-tab ${activeView === 'board' ? 'active' : ''}" data-action="set-view" data-view="board">
+        ${Icons.board} <span>Board</span>
+      </button>
+      <button class="nav-tab ${activeView === 'history' ? 'active' : ''}" data-action="set-view" data-view="history">
+        ${Icons.history} <span>Past History</span>
+        ${completedCount > 0 ? `<span class="nav-badge">${completedCount}</span>` : ''}
+      </button>
+    </nav>
+
     <div class="topbar-right">
       <div class="user-profile-badge">
         <span class="avatar">${userInitials(user.name)}</span>
@@ -148,6 +167,7 @@ function renderToolbar() {
           <option value="due_date_desc" ${filters.sort === 'due_date_desc' ? 'selected' : ''}>Sort: Due Date (Latest)</option>
           <option value="priority_desc" ${filters.sort === 'priority_desc' ? 'selected' : ''}>Sort: Priority (Highest)</option>
           <option value="created_desc" ${filters.sort === 'created_desc' ? 'selected' : ''}>Sort: Recently Created</option>
+          <option value="completed_desc" ${filters.sort === 'completed_desc' ? 'selected' : ''}>Sort: Recently Completed</option>
         </select>
 
         ${hasActiveFilters ? `<button class="btn-clear-filters" data-action="reset-filters">✕ Reset</button>` : ''}
@@ -184,12 +204,17 @@ function renderMobileTabs() {
 function renderTaskCard(task) {
   const dueInfo = formatDueDate(task.due_date);
   let dueBadge = '';
-  if (dueInfo && task.status !== 'done') {
+  if (task.status === 'done') {
+    const comp = task.completed_at ? formatCompletedAt(task.completed_at) : null;
+    if (comp) {
+      dueBadge = `<span class="badge badge-done" title="${esc(comp.full)}">${Icons.check} <span>${esc(comp.short)}</span></span>`;
+    } else {
+      dueBadge = `<span class="badge badge-done" title="Completed">${Icons.check} <span>Completed</span></span>`;
+    }
+  } else if (dueInfo) {
     if (dueInfo.status === 'overdue') dueBadge = `<span class="badge badge-overdue">${dueInfo.label}</span>`;
     else if (dueInfo.status === 'today') dueBadge = `<span class="badge badge-today">${dueInfo.label}</span>`;
     else dueBadge = `<span class="badge badge-upcoming">${dueInfo.label}</span>`;
-  } else if (task.due_date && task.status === 'done') {
-    dueBadge = `<span class="badge badge-normal">Completed</span>`;
   }
 
   const priorityBadge = task.priority === 'high'
@@ -280,7 +305,244 @@ function renderBoard() {
   </div>`;
 }
 
-// 7. Skeletons for Initial Load
+// 7. History & Completed Tasks View Renderer
+function renderHistoryView() {
+  const state = S_STORE.getState();
+  const { server, history } = state;
+  const users = server.users;
+  const activeTab = history.tab || 'tasks';
+
+  const { groups, totalFiltered, stats } = groupCompletedTasks(server.tasks, history, users);
+
+  return `
+  <div class="history-view-wrap">
+    <!-- Executive History Stats Bar -->
+    <div class="history-stats-grid">
+      <div class="history-stat-card">
+        <div class="history-stat-label">Total Completed</div>
+        <div class="history-stat-value" style="color:var(--status-done)">${stats.totalCompleted}</div>
+        <div class="history-stat-sub">Lifetime tasks completed</div>
+      </div>
+      <div class="history-stat-card">
+        <div class="history-stat-label">Completed Today</div>
+        <div class="history-stat-value" style="color:var(--primary)">${stats.completedToday}</div>
+        <div class="history-stat-sub">Tasks wrapped up today</div>
+      </div>
+      <div class="history-stat-card">
+        <div class="history-stat-label">Completed This Week</div>
+        <div class="history-stat-value" style="color:#0891b2">${stats.completedThisWeek}</div>
+        <div class="history-stat-sub">Past 7 days turnaround</div>
+      </div>
+      <div class="history-stat-card">
+        <div class="history-stat-label">On-Time Completion</div>
+        <div class="history-stat-value" style="color:${stats.onTimeRate >= 80 ? 'var(--status-done)' : '#d97706'}">${stats.onTimeRate}%</div>
+        <div class="history-stat-sub">Finished on or before due date</div>
+      </div>
+    </div>
+
+    <!-- History Sub-Navigation & Filters Toolbar -->
+    <div class="history-toolbar-card">
+      <div class="history-subtabs">
+        <button class="history-subtab ${activeTab === 'tasks' ? 'active' : ''}" data-action="set-history-tab" data-tab="tasks">
+          ${Icons.check} <span>Completed Tasks (${stats.totalCompleted})</span>
+        </button>
+        <button class="history-subtab ${activeTab === 'activity' ? 'active' : ''}" data-action="set-history-tab" data-tab="activity">
+          ${Icons.activity} <span>Team Activity Feed</span>
+        </button>
+      </div>
+
+      ${activeTab === 'tasks' ? `
+      <div class="history-filters-row">
+        <div class="search-box history-search-box">
+          <span class="search-icon">${Icons.search}</span>
+          <input
+            type="text"
+            id="historySearchInput"
+            class="search-input"
+            placeholder="Search completed tasks..."
+            value="${esc(history.search || '')}"
+            autocomplete="off"
+          />
+          ${history.search ? `<span class="search-clear" data-action="clear-history-search" title="Clear search">✕</span>` : ''}
+        </div>
+
+        <div class="filters-group">
+          <select class="filter-select" data-history-filter="assignee" title="Filter by Assignee">
+            <option value="all">Assignee: Everyone</option>
+            <option value="unassigned" ${history.assignee === 'unassigned' ? 'selected' : ''}>Unassigned</option>
+            ${users.map(u => `<option value="${u.id}" ${history.assignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+          </select>
+
+          <select class="filter-select" data-history-filter="timeframe" title="Filter by Timeframe">
+            <option value="all" ${history.timeframe === 'all' ? 'selected' : ''}>Timeframe: All Time</option>
+            <option value="today" ${history.timeframe === 'today' ? 'selected' : ''}>Completed Today</option>
+            <option value="week" ${history.timeframe === 'week' ? 'selected' : ''}>Past 7 Days</option>
+            <option value="month" ${history.timeframe === 'month' ? 'selected' : ''}>Past 30 Days</option>
+          </select>
+
+          ${(history.search || history.assignee !== 'all' || history.timeframe !== 'all') ? `
+            <button class="btn-clear-filters" data-action="reset-history-filters">✕ Reset</button>
+          ` : ''}
+        </div>
+      </div>` : ''}
+    </div>
+
+    <!-- Content: Tasks Timeline vs Activity Feed -->
+    ${activeTab === 'tasks' ? renderHistoryTasksList(groups, totalFiltered) : renderActivityFeed()}
+  </div>`;
+}
+
+function renderHistoryTasksList(groups, totalFiltered) {
+  if (!groups.length) {
+    return `
+    <div class="history-empty-card">
+      <div class="empty-icon-wrap">${Icons.emptyTask}</div>
+      <h3 style="font-size:16px;font-weight:700;margin-bottom:4px;color:var(--ink)">No Completed Tasks Found</h3>
+      <p style="font-size:13px;color:var(--ink-muted);max-width:380px;margin-bottom:14px">
+        ${totalFiltered === 0 ? 'No tasks have been marked as completed yet or none match your active filter criteria.' : ''}
+      </p>
+      <button class="btn btn-secondary btn-sm" data-action="set-view" data-view="board">${Icons.board} Go to Kanban Board</button>
+    </div>`;
+  }
+
+  return `
+  <div class="history-timeline">
+    ${groups.map(group => `
+      <div class="history-group">
+        <div class="history-group-header">
+          <span class="group-title">${esc(group.title)}</span>
+          <span class="group-badge">${group.tasks.length}</span>
+        </div>
+
+        <div class="history-group-items">
+          ${group.tasks.map(task => renderHistoryTaskItem(task)).join('')}
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function renderHistoryTaskItem(task) {
+  const name = userName(task.assignee_id);
+  const initials = userInitials(name);
+  const comp = task.completed_at ? formatCompletedAt(task.completed_at) : null;
+  const timeliness = getTimelinessInfo(task.due_date, task.completed_at);
+
+  const priorityBadge = task.priority === 'high'
+    ? `<span class="badge badge-high">High</span>`
+    : task.priority === 'low'
+      ? `<span class="badge badge-low">Low</span>`
+      : '';
+
+  let timelinessBadge = '';
+  if (timeliness.status === 'on_time') {
+    timelinessBadge = `<span class="badge badge-done" title="Completed on due date">${Icons.check} On Time</span>`;
+  } else if (timeliness.status === 'early') {
+    timelinessBadge = `<span class="badge badge-done" title="Finished before due date">⚡ ${timeliness.label}</span>`;
+  } else if (timeliness.status === 'overdue') {
+    timelinessBadge = `<span class="badge badge-overdue" title="Finished after due date">⚠ ${timeliness.label}</span>`;
+  }
+
+  return `
+  <div class="history-item-card" data-task-id="${task.id}">
+    <div class="history-item-left">
+      <div class="history-item-check">${Icons.check}</div>
+      <div class="history-item-info">
+        <div class="history-item-top">
+          <div class="history-badges">
+            ${priorityBadge}
+            ${timelinessBadge}
+            ${comp ? `<span class="badge badge-done" title="${esc(comp.full)}">${Icons.clock} ${esc(comp.short)}</span>` : ''}
+          </div>
+        </div>
+        <div class="history-task-title">${esc(task.title)}</div>
+        ${task.description ? `<div class="history-task-desc">${esc(task.description)}</div>` : ''}
+        <div class="history-item-meta">
+          <span class="meta-item"><span class="avatar">${initials}</span> <span>${esc(name)}</span></span>
+          ${task.due_date ? `<span class="meta-item">Due: <strong>${task.due_date}</strong></span>` : ''}
+          ${task.completed_at ? `<span class="meta-item">Completed: <strong>${formatFullDateTime(task.completed_at)}</strong></span>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="history-item-actions">
+      <button class="btn btn-secondary btn-sm" data-action="edit-task" data-id="${task.id}" title="View details">View</button>
+      <button class="btn btn-secondary btn-sm" data-action="reopen-task" data-id="${task.id}" title="Move back to In Progress">
+        ${Icons.rotateCcw} Reopen
+      </button>
+    </div>
+  </div>`;
+}
+
+function renderActivityFeed() {
+  const state = S_STORE.getState();
+  const logs = state.history.activityLogs || [];
+  const isLoading = state.history.isLoadingLogs;
+
+  if (isLoading) {
+    return `
+    <div class="history-loading-card">
+      <div class="skeleton" style="height:48px;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:48px;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:48px"></div>
+    </div>`;
+  }
+
+  if (!logs.length) {
+    return `
+    <div class="history-empty-card">
+      <div class="empty-icon-wrap">${Icons.activity}</div>
+      <h3 style="font-size:16px;font-weight:700;margin-bottom:4px;color:var(--ink)">No Activity Logs Loaded</h3>
+      <p style="font-size:13px;color:var(--ink-muted);margin-bottom:14px">Audit events will appear here as team members take action.</p>
+      <button class="btn btn-primary btn-sm" data-action="refresh-activity">Load Recent Activity</button>
+    </div>`;
+  }
+
+  return `
+  <div class="activity-feed-card">
+    <div class="activity-feed-head">
+      <span style="font-size:13px;font-weight:700;color:var(--ink)">Recent Team Activity (${logs.length})</span>
+      <button class="btn btn-secondary btn-sm" data-action="refresh-activity">↻ Refresh</button>
+    </div>
+    <div class="activity-stream">
+      ${logs.map(log => {
+        const timeFormatted = formatFullDateTime(log.created_at);
+        const initials = userInitials(log.username || 'Team');
+        return `
+        <div class="activity-row">
+          <div class="activity-avatar-wrap">
+            <span class="avatar">${initials}</span>
+          </div>
+          <div class="activity-body">
+            <div class="activity-main">
+              <strong class="activity-user">${esc(log.username || 'System')}</strong>
+              <span class="activity-action">${esc(log.action)}</span>
+            </div>
+            <div class="activity-meta">
+              <span>${timeFormatted}</span>
+              ${log.entity ? `<span class="activity-tag">${esc(log.entity)}</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+async function loadActivityLogs() {
+  S_STORE.setLoadingActivityLogs(true);
+  try {
+    const res = await api('/api/audit?limit=100');
+    if (res.logs) {
+      S_STORE.setActivityLogs(res.logs);
+    }
+  } catch (err) {
+    console.error('Failed to load activity logs:', err);
+    S_STORE.setLoadingActivityLogs(false);
+  }
+}
+
+// 8. Skeletons for Initial Load
 function renderSkeletons() {
   return `
   <div class="main-container">
@@ -345,7 +607,7 @@ function renderTaskModalForm(editing, isSubmitting, error) {
   <div class="modal-head">
     <div>
       <h2 class="modal-title">${isEdit ? 'Edit Task' : 'Create New Task'}</h2>
-      <p class="modal-desc">${isEdit ? 'Update deliverable details and assignment' : 'Add a task with an assignee and due date'}</p>
+      <p class="modal-desc">${isEdit ? 'Update deliverable details, status, and assignment' : 'Add a task with an assignee and due date'}</p>
     </div>
     <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
   </div>
@@ -382,10 +644,41 @@ function renderTaskModalForm(editing, isSubmitting, error) {
       </div>
     </div>
 
-    <div class="field">
-      <label for="taskDueDateInput">Due Date</label>
-      <input type="date" id="taskDueDateInput" name="dueDate" value="${editing?.due_date || ''}" />
+    <div style="display:grid;grid-template-columns:${isEdit ? '1fr 1fr' : '1fr'};gap:12px">
+      <div class="field">
+        <label for="taskDueDateInput">Due Date</label>
+        <input type="date" id="taskDueDateInput" name="dueDate" value="${editing?.due_date || ''}" />
+      </div>
+
+      ${isEdit ? `
+      <div class="field">
+        <label for="taskStatusSelect">Status</label>
+        <select id="taskStatusSelect" name="status">
+          <option value="open" ${editing?.status === 'open' ? 'selected' : ''}>Open</option>
+          <option value="in_progress" ${editing?.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+          <option value="done" ${editing?.status === 'done' ? 'selected' : ''}>Done (Completed)</option>
+        </select>
+      </div>` : ''}
     </div>
+
+    ${isEdit ? `
+    <div class="task-modal-meta">
+      ${editing.completed_at ? `
+      <div class="meta-row meta-row-completed">
+        <span class="meta-label">${Icons.check} Completed At:</span>
+        <span class="meta-value">${esc(formatFullDateTime(editing.completed_at))}</span>
+      </div>` : ''}
+      ${editing.created_at ? `
+      <div class="meta-row">
+        <span class="meta-label">Created:</span>
+        <span class="meta-value">${esc(formatFullDateTime(editing.created_at))}</span>
+      </div>` : ''}
+      ${editing.updated_at ? `
+      <div class="meta-row">
+        <span class="meta-label">Last Updated:</span>
+        <span class="meta-value">${esc(formatFullDateTime(editing.updated_at))}</span>
+      </div>` : ''}
+    </div>` : ''}
 
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
@@ -733,6 +1026,20 @@ function renderLandingPage() {
 
 let isAppShellMounted = false;
 
+function renderMainContent() {
+  const state = S_STORE.getState();
+  const activeView = state.ui.activeView || 'board';
+  if (activeView === 'history') {
+    return `<div id="historyViewHost">${renderHistoryView()}</div>`;
+  }
+  return `
+    <div id="summaryHost">${renderSummaryMetrics()}</div>
+    <div id="toolbarHost">${renderToolbar()}</div>
+    <div id="mobileTabsHost">${renderMobileTabs()}</div>
+    <div id="boardHost">${state.ui.isInitialLoading ? renderSkeletons() : renderBoard()}</div>
+  `;
+}
+
 function renderApp() {
   const root = document.getElementById('app');
   const state = S_STORE.getState();
@@ -753,26 +1060,20 @@ function renderApp() {
     isAppShellMounted = true;
     root.innerHTML = `
       <div id="headerHost">${renderHeader()}</div>
-      <main class="main-container">
-        <div id="summaryHost">${renderSummaryMetrics()}</div>
-        <div id="toolbarHost">${renderToolbar()}</div>
-        <div id="mobileTabsHost">${renderMobileTabs()}</div>
-        <div id="boardHost">${state.ui.isInitialLoading ? renderSkeletons() : renderBoard()}</div>
+      <main id="mainContainer" class="main-container">
+        ${renderMainContent()}
       </main>
       <div id="modalHost">${renderModal()}</div>
       <div id="toastHost" class="toast-container" aria-live="polite">${renderToasts()}</div>
     `;
     setupModalFocusTrap();
-    setupDragAndDrop();
+    if (state.ui.activeView === 'board') setupDragAndDrop();
     return;
   }
 
   // Targeted Component Updates without Full DOM Destruction
   updateHeaderDom();
-  updateSummaryDom();
-  updateToolbarDom();
-  updateMobileTabsDom();
-  updateBoardDom();
+  updateMainContentDom();
   updateModalDom();
   updateToastsDom();
 }
@@ -780,6 +1081,39 @@ function renderApp() {
 function updateHeaderDom() {
   const el = document.getElementById('headerHost');
   if (el) el.innerHTML = renderHeader();
+}
+
+function updateMainContentDom() {
+  const el = document.getElementById('mainContainer');
+  if (!el) return;
+  const state = S_STORE.getState();
+  const activeView = state.ui.activeView || 'board';
+
+  if (activeView === 'history') {
+    const historyHost = document.getElementById('historyViewHost');
+    const isHistorySearchFocused = document.activeElement && document.activeElement.id === 'historySearchInput';
+    if (!historyHost) {
+      el.innerHTML = `<div id="historyViewHost">${renderHistoryView()}</div>`;
+    } else if (!isHistorySearchFocused) {
+      historyHost.innerHTML = renderHistoryView();
+    }
+  } else {
+    const boardHost = document.getElementById('boardHost');
+    if (!boardHost) {
+      el.innerHTML = `
+        <div id="summaryHost">${renderSummaryMetrics()}</div>
+        <div id="toolbarHost">${renderToolbar()}</div>
+        <div id="mobileTabsHost">${renderMobileTabs()}</div>
+        <div id="boardHost">${state.ui.isInitialLoading ? renderSkeletons() : renderBoard()}</div>
+      `;
+      setupDragAndDrop();
+    } else {
+      updateSummaryDom();
+      updateToolbarDom();
+      updateMobileTabsDom();
+      updateBoardDom();
+    }
+  }
 }
 
 function updateSummaryDom() {
@@ -830,21 +1164,19 @@ S_STORE.subscribe((state, domain) => {
   if (domain === 'auth') {
     renderApp();
   } else if (domain === 'tasks') {
-    updateSummaryDom();
-    updateBoardDom();
-    updateMobileTabsDom();
+    updateHeaderDom();
+    updateMainContentDom();
   } else if (domain === 'users') {
-    updateToolbarDom();
-    updateBoardDom();
+    updateMainContentDom();
     if (state.ui.modal?.type === 'user') updateModalDom();
   } else if (domain === 'filters') {
-    updateBoardDom();
-    updateMobileTabsDom();
-    updateToolbarDom();
+    updateMainContentDom();
+  } else if (domain === 'history') {
+    updateMainContentDom();
   } else if (domain === 'ui') {
+    updateHeaderDom();
+    updateMainContentDom();
     updateModalDom();
-    updateMobileTabsDom();
-    if (state.ui.isInitialLoading !== undefined) updateBoardDom();
   } else if (domain === 'toasts') {
     updateToastsDom();
   } else {
@@ -1025,9 +1357,16 @@ const handleSearchDebounced = debounce((value) => {
   S_STORE.setFilter('search', value);
 }, 200);
 
+const handleHistorySearchDebounced = debounce((value) => {
+  S_STORE.setHistoryFilter('search', value);
+}, 200);
+
 document.addEventListener('input', (e) => {
   if (e.target.id === 'taskSearchInput') {
     handleSearchDebounced(e.target.value);
+  }
+  if (e.target.id === 'historySearchInput') {
+    handleHistorySearchDebounced(e.target.value);
   }
 });
 
@@ -1035,6 +1374,9 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', (e) => {
   if (e.target.dataset && e.target.dataset.filter) {
     S_STORE.setFilter(e.target.dataset.filter, e.target.value);
+  }
+  if (e.target.dataset && e.target.dataset.historyFilter) {
+    S_STORE.setHistoryFilter(e.target.dataset.historyFilter, e.target.value);
   }
 });
 
@@ -1084,16 +1426,22 @@ document.addEventListener('submit', async (e) => {
       dueDate: fd.get('dueDate') || null,
       priority: fd.get('priority') || 'normal',
     };
+    if (fd.has('status')) {
+      payload.status = fd.get('status');
+    }
 
     if (isEdit) {
       // Optimistic Edit
-      const rollback = S_STORE.optimisticUpdateTask(editing.id, {
+      const patch = {
         title: payload.title,
         description: payload.description,
         assignee_id: payload.assigneeId,
         due_date: payload.dueDate,
         priority: payload.priority,
-      });
+      };
+      if (payload.status) patch.status = payload.status;
+
+      const rollback = S_STORE.optimisticUpdateTask(editing.id, patch);
 
       S_STORE.closeModal();
       S_STORE.addToast({ type: 'success', title: 'Task Saved', message: `"${payload.title}" has been updated.` });
@@ -1278,6 +1626,48 @@ document.addEventListener('click', async (e) => {
 
   if (action === 'dismiss-toast') {
     S_STORE.removeToast(btn.dataset.id);
+    return;
+  }
+
+  if (action === 'set-view') {
+    const view = btn.dataset.view;
+    S_STORE.setActiveView(view);
+    if (view === 'history' && S_STORE.getState().history.tab === 'activity') {
+      loadActivityLogs();
+    }
+    return;
+  }
+
+  if (action === 'set-history-tab') {
+    const tab = btn.dataset.tab;
+    S_STORE.setHistoryTab(tab);
+    if (tab === 'activity') {
+      loadActivityLogs();
+    }
+    return;
+  }
+
+  if (action === 'clear-history-search') {
+    S_STORE.setHistoryFilter('search', '');
+    const input = document.getElementById('historySearchInput');
+    if (input) input.value = '';
+    return;
+  }
+
+  if (action === 'reset-history-filters') {
+    S_STORE.resetHistoryFilters();
+    const input = document.getElementById('historySearchInput');
+    if (input) input.value = '';
+    return;
+  }
+
+  if (action === 'refresh-activity') {
+    await loadActivityLogs();
+    return;
+  }
+
+  if (action === 'reopen-task') {
+    await handleAdvanceTaskOptimistic(btn.dataset.id, 'in_progress');
     return;
   }
 

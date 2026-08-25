@@ -33,6 +33,15 @@ class Store {
         isInitialLoading: true,
         submitting: {}, // e.g. { task: true, login: true, ... }
         activeMobileCol: 'all', // 'all' | 'open' | 'in_progress' | 'done'
+        activeView: 'board', // 'board' | 'history'
+      },
+      history: {
+        tab: 'tasks', // 'tasks' | 'activity'
+        search: '',
+        assignee: 'all',
+        timeframe: 'all', // 'all' | 'today' | 'week' | 'month'
+        activityLogs: [],
+        isLoadingLogs: false,
       },
       toasts: [],
     };
@@ -135,11 +144,23 @@ class Store {
     const index = this._state.server.tasks.findIndex(t => t.id === id);
     if (index === -1) return () => {};
 
+    const currentTask = this._state.server.tasks[index];
+    let nextCompletedAt = currentTask.completed_at;
+    if (patch.status !== undefined) {
+      if (patch.status === 'done') {
+        nextCompletedAt = patch.completed_at || (currentTask.status === 'done' && currentTask.completed_at ? currentTask.completed_at : new Date().toISOString());
+      } else {
+        nextCompletedAt = null;
+      }
+    } else if (patch.completed_at !== undefined) {
+      nextCompletedAt = patch.completed_at;
+    }
+
     const updated = {
-      ...this._state.server.tasks[index],
+      ...currentTask,
       ...patch,
       updated_at: new Date().toISOString(),
-      completed_at: patch.status === 'done' ? new Date().toISOString() : (patch.status ? null : this._state.server.tasks[index].completed_at),
+      completed_at: nextCompletedAt,
     };
 
     const newTasks = [...this._state.server.tasks];
@@ -211,6 +232,46 @@ class Store {
   setActiveMobileCol(col) {
     this._state.ui.activeMobileCol = col;
     this._notify('ui');
+  }
+
+  // ---------- Navigation & History Actions ----------
+  setActiveView(view) {
+    if (this._state.ui.activeView === view) return;
+    this._state.ui.activeView = view;
+    this._notify('ui');
+  }
+
+  setHistoryTab(tab) {
+    if (this._state.history.tab === tab) return;
+    this._state.history.tab = tab;
+    this._notify('history');
+  }
+
+  setHistoryFilter(key, value) {
+    if (this._state.history[key] === value) return;
+    this._state.history = { ...this._state.history, [key]: value };
+    this._notify('history');
+  }
+
+  resetHistoryFilters() {
+    this._state.history = {
+      ...this._state.history,
+      search: '',
+      assignee: 'all',
+      timeframe: 'all',
+    };
+    this._notify('history');
+  }
+
+  setActivityLogs(logs) {
+    this._state.history.activityLogs = Array.isArray(logs) ? logs : [];
+    this._state.history.isLoadingLogs = false;
+    this._notify('history');
+  }
+
+  setLoadingActivityLogs(loading) {
+    this._state.history.isLoadingLogs = !!loading;
+    this._notify('history');
   }
 
   // ---------- Toast Notification System ----------
@@ -332,6 +393,53 @@ function formatDueDate(dateStr) {
   return { label: `Due ${dateStr}`, status: 'future' };
 }
 
+function formatFullDateTime(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatCompletedAt(isoString) {
+  if (!isoString) return null;
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return null;
+
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+
+  const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const fullDateStr = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const fullTimeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
+  let shortLabel = '';
+  if (isToday) {
+    shortLabel = `Done today, ${timeStr}`;
+  } else if (isYesterday) {
+    shortLabel = `Done yesterday, ${timeStr}`;
+  } else {
+    shortLabel = `Done ${fullDateStr}, ${timeStr}`;
+  }
+
+  return {
+    short: shortLabel,
+    full: `Completed on ${fullDateStr} at ${fullTimeStr}`,
+    iso: isoString,
+    dateStr: fullDateStr,
+    timeStr: timeStr,
+  };
+}
+
 function debounce(fn, delay = 250) {
   let timer = null;
   return function (...args) {
@@ -435,8 +543,146 @@ function filterAndSortTasks(tasks, filters, users = []) {
     if (filters.sort === 'created_desc') {
       return new Date(b.created_at || 0) - new Date(a.created_at || 0);
     }
+    if (filters.sort === 'completed_desc') {
+      const aTime = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+      const bTime = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+      if (bTime !== aTime) return bTime - aTime;
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    }
     return 0;
   });
 
   return filtered;
+}
+
+function getTimelinessInfo(dueDateStr, completedAtStr) {
+  if (!dueDateStr) return { status: 'none', label: '' };
+  if (!completedAtStr) return { status: 'none', label: '' };
+
+  const compDateStr = new Date(completedAtStr).toISOString().slice(0, 10);
+  if (compDateStr === dueDateStr) {
+    return { status: 'on_time', label: 'On Time' };
+  }
+  if (compDateStr < dueDateStr) {
+    const diffDays = Math.round((new Date(dueDateStr) - new Date(compDateStr)) / (1000 * 60 * 60 * 24));
+    return { status: 'early', label: diffDays === 1 ? '1 day early' : `${diffDays} days early` };
+  }
+  const diffDays = Math.round((new Date(compDateStr) - new Date(dueDateStr)) / (1000 * 60 * 60 * 24));
+  return { status: 'overdue', label: diffDays === 1 ? '1 day late' : `${diffDays} days late` };
+}
+
+function groupCompletedTasks(tasks, historyFilter = {}, users = []) {
+  const query = (historyFilter.search || '').toLowerCase().trim();
+  const assigneeFilter = historyFilter.assignee || 'all';
+  const timeframeFilter = historyFilter.timeframe || 'all';
+  const userMap = new Map(users.map(u => [u.id, (u.name || '').toLowerCase()]));
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // 1. Filter completed tasks only
+  const completedTasks = tasks.filter(t => {
+    if (t.status !== 'done') return false;
+
+    // Assignee filter
+    if (assigneeFilter !== 'all') {
+      if (assigneeFilter === 'unassigned' && t.assignee_id) return false;
+      if (assigneeFilter !== 'unassigned' && t.assignee_id !== assigneeFilter) return false;
+    }
+
+    // Timeframe filter
+    const compTime = t.completed_at ? new Date(t.completed_at) : new Date(t.updated_at || 0);
+    const compDateStr = compTime.toISOString().slice(0, 10);
+
+    if (timeframeFilter === 'today' && compDateStr !== todayStr) return false;
+    if (timeframeFilter === 'week' && compTime < sevenDaysAgo) return false;
+    if (timeframeFilter === 'month' && compTime < thirtyDaysAgo) return false;
+
+    // Search query
+    if (query) {
+      const matchTitle = (t.title || '').toLowerCase().includes(query);
+      const matchDesc = (t.description || '').toLowerCase().includes(query);
+      const assigneeName = t.assignee_id ? (userMap.get(t.assignee_id) || '') : 'unassigned';
+      const matchAssignee = assigneeName.includes(query);
+      if (!matchTitle && !matchDesc && !matchAssignee) return false;
+    }
+
+    return true;
+  });
+
+  // Sort by completed_at desc
+  completedTasks.sort((a, b) => {
+    const aTime = a.completed_at ? new Date(a.completed_at).getTime() : new Date(a.updated_at || 0).getTime();
+    const bTime = b.completed_at ? new Date(b.completed_at).getTime() : new Date(b.updated_at || 0).getTime();
+    return bTime - aTime;
+  });
+
+  // Buckets
+  const groups = [
+    { key: 'today', title: 'Completed Today', tasks: [] },
+    { key: 'yesterday', title: 'Completed Yesterday', tasks: [] },
+    { key: 'week', title: 'Completed This Week', tasks: [] },
+    { key: 'month', title: 'Earlier This Month', tasks: [] },
+    { key: 'older', title: 'Older History', tasks: [] },
+  ];
+
+  for (const t of completedTasks) {
+    const compDate = t.completed_at ? new Date(t.completed_at) : new Date(t.updated_at || 0);
+    const compDateStr = compDate.toISOString().slice(0, 10);
+
+    if (compDateStr === todayStr) {
+      groups[0].tasks.push(t);
+    } else if (compDateStr === yesterdayStr) {
+      groups[1].tasks.push(t);
+    } else if (compDate >= sevenDaysAgo) {
+      groups[2].tasks.push(t);
+    } else if (compDate >= thirtyDaysAgo) {
+      groups[3].tasks.push(t);
+    } else {
+      groups[4].tasks.push(t);
+    }
+  }
+
+  // Filter out empty groups
+  const activeGroups = groups.filter(g => g.tasks.length > 0);
+
+  // Compute stats across all completed tasks in system
+  const allDone = tasks.filter(t => t.status === 'done');
+  let completedTodayCount = 0;
+  let completedWeekCount = 0;
+  let onTimeCount = 0;
+  let totalWithDueDate = 0;
+
+  for (const t of allDone) {
+    const compDate = t.completed_at ? new Date(t.completed_at) : new Date(t.updated_at || 0);
+    const compDateStr = compDate.toISOString().slice(0, 10);
+
+    if (compDateStr === todayStr) completedTodayCount++;
+    if (compDate >= sevenDaysAgo) completedWeekCount++;
+
+    if (t.due_date) {
+      totalWithDueDate++;
+      if (compDateStr <= t.due_date) onTimeCount++;
+    }
+  }
+
+  const onTimeRate = totalWithDueDate > 0 ? Math.round((onTimeCount / totalWithDueDate) * 100) : 100;
+
+  return {
+    groups: activeGroups,
+    totalFiltered: completedTasks.length,
+    stats: {
+      totalCompleted: allDone.length,
+      completedToday: completedTodayCount,
+      completedThisWeek: completedWeekCount,
+      onTimeRate: onTimeRate,
+    }
+  };
 }
