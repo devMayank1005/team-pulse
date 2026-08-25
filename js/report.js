@@ -147,6 +147,7 @@ function renderOnePageExecutiveDossierHtml(reportData, aiSummary, aiOutcomes) {
 <head>
   <meta charset="UTF-8">
   <title>Executive Work Report — ${esc(reportData.assigneeName)} — Kognoz Consulting</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -579,6 +580,7 @@ function renderMultiSlidePresentationHtml(reportData, aiSummary, aiOutcomes) {
 <head>
   <meta charset="UTF-8">
   <title>Kognoz Executive Report — ${esc(reportData.assigneeName)}</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
