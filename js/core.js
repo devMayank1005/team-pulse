@@ -1034,9 +1034,12 @@ class RealtimeManager {
 
     try {
       const res = await api('/api/realtime-config');
-      if (res && res.enabled) {
+      if (res && res.enabled && res.wsUrl) {
         this.config = res;
         this.connect();
+      } else {
+        this.config = res || {};
+        this.startFallbackPolling();
       }
     } catch (err) {
       console.warn('Realtime config fetch fallback to adaptive polling:', err.message);
@@ -1060,7 +1063,6 @@ class RealtimeManager {
       return;
     }
 
-    this.setStatus('connecting');
     clearTimeout(this.reconnectTimer);
 
     try {
@@ -1084,16 +1086,18 @@ class RealtimeManager {
       };
 
       this.ws.onerror = (err) => {
-        console.warn('Realtime WebSocket notice:', err);
+        console.warn('Realtime WebSocket notice (adaptive sync active):', err);
+        this.startFallbackPolling();
       };
 
       this.ws.onclose = () => {
         this.cleanupSocket();
-        this.setStatus('connecting');
+        this.startFallbackPolling();
         this.scheduleReconnect();
       };
     } catch (err) {
       console.warn('Realtime connection initial error:', err);
+      this.startFallbackPolling();
       this.scheduleReconnect();
     }
   }
@@ -1166,7 +1170,7 @@ class RealtimeManager {
 
   scheduleReconnect() {
     this.startFallbackPolling();
-    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts++), 15000);
+    const delay = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts++), 20000);
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
       if (this.store.getState().auth.token) {
@@ -1177,7 +1181,8 @@ class RealtimeManager {
 
   startFallbackPolling() {
     if (this.pollTimer) return;
-    const interval = this.config?.pollFallbackMs || 5000;
+    const interval = this.config?.pollFallbackMs || 4000;
+    this.performDeltaSync();
     this.pollTimer = setInterval(() => {
       if (this.isTabActive && this.store.getState().auth.token) {
         this.performDeltaSync();
@@ -1200,6 +1205,9 @@ class RealtimeManager {
       const res = await api('/api/tasks');
       if (res && res.tasks) {
         this.store.setTasksFromSync(res.tasks);
+        if (this.status !== 'live') {
+          this.setStatus('live');
+        }
       }
     } catch (e) {}
   }

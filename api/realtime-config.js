@@ -20,14 +20,23 @@ module.exports = async function handler(req, res) {
 
   try {
     const wsBase = SUPABASE_URL.replace(/^http/, 'ws');
-    const anonKey = SUPABASE_ANON_KEY || SUPABASE_SERVICE_ROLE_KEY;
-    const wsUrl = `${wsBase}/realtime/v1/websocket?apikey=${encodeURIComponent(anonKey)}&vsn=1.0.0`;
+    const anonKey = SUPABASE_ANON_KEY;
 
+    if (anonKey) {
+      const wsUrl = `${wsBase}/realtime/v1/websocket?apikey=${encodeURIComponent(anonKey)}&vsn=1.0.0`;
+      return res.status(200).json({
+        enabled: true,
+        wsUrl,
+        supabaseUrl: SUPABASE_URL,
+        pollFallbackMs: 4000,
+      });
+    }
+
+    // If SUPABASE_ANON_KEY is not configured yet, use fast delta polling
     return res.status(200).json({
-      enabled: true,
-      wsUrl,
+      enabled: false,
       supabaseUrl: SUPABASE_URL,
-      pollFallbackMs: 5000,
+      pollFallbackMs: 4000,
     });
   } catch (err) {
     return serverError(res, err, 'realtime-config.js');
