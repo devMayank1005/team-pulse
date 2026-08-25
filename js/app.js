@@ -329,11 +329,11 @@ function renderModal() {
   if (type === 'task') {
     modalBody = renderTaskModalForm(editing, isSubmitting, error);
   } else if (type === 'user') {
-    modalBody = renderUserModalForm(state.server.users, state.auth.user, isSubmitting, error);
+    modalBody = renderUserModalForm(state.server.users, state.auth.user, isSubmitting, error, editing);
   } else if (type === 'email') {
-    modalBody = renderEmailModalForm(isSubmitting, error);
+    modalBody = renderEmailModalForm(isSubmitting, error, editing);
   } else if (type === 'login') {
-    modalBody = renderLoginModalForm(isSubmitting, error);
+    modalBody = renderLoginModalForm(isSubmitting, error, editing);
   } else if (type === 'report') {
     modalBody = renderExportReportModal(editing, isSubmitting, error);
   }
@@ -348,7 +348,14 @@ function renderModal() {
 
 function renderTaskModalForm(editing, isSubmitting, error) {
   const users = S_STORE.getState().server.users;
-  const isEdit = !!editing;
+  const isEdit = !!(editing && editing.id);
+
+  const currentTitle = editing?.title || '';
+  const currentDesc = editing?.description || '';
+  const currentAssignee = editing?.assignee_id || editing?.assigneeId || '';
+  const currentPriority = editing?.priority || 'normal';
+  const currentDueDate = editing?.due_date || editing?.dueDate || '';
+  const currentStatus = editing?.status || editing?._initialStatus || 'open';
 
   return `
   <div class="modal-head">
@@ -364,7 +371,7 @@ function renderTaskModalForm(editing, isSubmitting, error) {
   <form id="taskForm">
     <div class="field">
       <label for="taskTitleInput">Task Title *</label>
-      <input id="taskTitleInput" name="title" value="${esc(editing?.title || '')}" placeholder="e.g. Deploy Production Release v1.2" required autofocus />
+      <input id="taskTitleInput" name="title" value="${esc(currentTitle)}" placeholder="e.g. Deploy Production Release v1.2" required autofocus />
     </div>
 
     <div class="field">
@@ -374,7 +381,7 @@ function renderTaskModalForm(editing, isSubmitting, error) {
           ${Icons.sparkles} <span>✨ Rephrase & Repolish</span>
         </button>
       </div>
-      <textarea id="taskDescInput" name="description" placeholder="Describe task in detail or write draft notes, then click '✨ Rephrase & Repolish' to expand into professional documentation tone...">${esc(editing?.description || '')}</textarea>
+      <textarea id="taskDescInput" name="description" placeholder="Describe task in detail or write draft notes, then click '✨ Rephrase & Repolish' to expand into professional documentation tone...">${esc(currentDesc)}</textarea>
       <div class="field-hint">Detail provided here is automatically synthesized in your Kognoz PDF Executive Work Report.</div>
     </div>
 
@@ -383,16 +390,16 @@ function renderTaskModalForm(editing, isSubmitting, error) {
         <label for="taskAssigneeSelect">Assignee</label>
         <select id="taskAssigneeSelect" name="assigneeId">
           <option value="">Unassigned</option>
-          ${users.map(u => `<option value="${u.id}" ${editing?.assignee_id === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+          ${users.map(u => `<option value="${u.id}" ${currentAssignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
         </select>
       </div>
 
       <div class="field">
         <label for="taskPrioritySelect">Priority</label>
         <select id="taskPrioritySelect" name="priority">
-          <option value="normal" ${(!editing || editing?.priority === 'normal') ? 'selected' : ''}>Normal</option>
-          <option value="high" ${editing?.priority === 'high' ? 'selected' : ''}>High</option>
-          <option value="low" ${editing?.priority === 'low' ? 'selected' : ''}>Low</option>
+          <option value="normal" ${currentPriority === 'normal' ? 'selected' : ''}>Normal</option>
+          <option value="high" ${currentPriority === 'high' ? 'selected' : ''}>High</option>
+          <option value="low" ${currentPriority === 'low' ? 'selected' : ''}>Low</option>
         </select>
       </div>
     </div>
@@ -400,16 +407,16 @@ function renderTaskModalForm(editing, isSubmitting, error) {
     <div style="display:grid;grid-template-columns:${isEdit ? '1fr 1fr' : '1fr'};gap:12px">
       <div class="field">
         <label for="taskDueDateInput">Due Date</label>
-        <input type="date" id="taskDueDateInput" name="dueDate" value="${editing?.due_date || ''}" />
+        <input type="date" id="taskDueDateInput" name="dueDate" value="${currentDueDate}" />
       </div>
 
       ${isEdit ? `
       <div class="field">
         <label for="taskStatusSelect">Status</label>
         <select id="taskStatusSelect" name="status">
-          <option value="open" ${editing?.status === 'open' ? 'selected' : ''}>Open</option>
-          <option value="in_progress" ${editing?.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
-          <option value="done" ${editing?.status === 'done' ? 'selected' : ''}>Done (Completed)</option>
+          <option value="open" ${currentStatus === 'open' ? 'selected' : ''}>Open</option>
+          <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>In Progress</option>
+          <option value="done" ${currentStatus === 'done' ? 'selected' : ''}>Done (Completed)</option>
         </select>
       </div>` : ''}
     </div>
@@ -442,7 +449,7 @@ function renderTaskModalForm(editing, isSubmitting, error) {
   </form>`;
 }
 
-function renderUserModalForm(users, currentUser, isSubmitting, error) {
+function renderUserModalForm(users, currentUser, isSubmitting, error, editing = null) {
   return `
   <div class="modal-head">
     <div>
@@ -476,17 +483,17 @@ function renderUserModalForm(users, currentUser, isSubmitting, error) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="field">
         <label>Full Name *</label>
-        <input name="name" placeholder="Jane Doe" required />
+        <input name="name" value="${esc(editing?.name || '')}" placeholder="Jane Doe" required />
       </div>
       <div class="field">
         <label>Username *</label>
-        <input name="username" placeholder="janedoe" required autocomplete="username" />
+        <input name="username" value="${esc(editing?.username || '')}" placeholder="janedoe" required autocomplete="username" />
       </div>
     </div>
 
     <div class="field">
       <label>Email * (also used for Microsoft SSO match)</label>
-      <input name="email" type="email" placeholder="jane.doe@kognozconsulting.com" required autocomplete="email" />
+      <input name="email" type="email" value="${esc(editing?.email || '')}" placeholder="jane.doe@kognozconsulting.com" required autocomplete="email" />
     </div>
 
     <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:12px">
@@ -497,8 +504,8 @@ function renderUserModalForm(users, currentUser, isSubmitting, error) {
       <div class="field">
         <label>Role</label>
         <select name="role">
-          <option value="member">Member</option>
-          <option value="admin">Admin</option>
+          <option value="member" ${(!editing?.role || editing?.role === 'member') ? 'selected' : ''}>Member</option>
+          <option value="admin" ${editing?.role === 'admin' ? 'selected' : ''}>Admin</option>
         </select>
       </div>
     </div>
@@ -512,7 +519,7 @@ function renderUserModalForm(users, currentUser, isSubmitting, error) {
   </form>`;
 }
 
-function renderEmailModalForm(isSubmitting, error) {
+function renderEmailModalForm(isSubmitting, error, editing = null) {
   return `
   <div class="modal-head">
     <div>
@@ -528,24 +535,24 @@ function renderEmailModalForm(isSubmitting, error) {
     <div class="field">
       <label>Send From</label>
       <select name="sender">
-        <option value="mayank@kognozconsulting.com">Mayank (mayank@kognozconsulting.com)</option>
-        <option value="yashwanth.krishna@kognozconsulting.com">Yashwanth (yashwanth.krishna@kognozconsulting.com)</option>
+        <option value="mayank@kognozconsulting.com" ${editing?.sender === 'mayank@kognozconsulting.com' ? 'selected' : ''}>Mayank (mayank@kognozconsulting.com)</option>
+        <option value="yashwanth.krishna@kognozconsulting.com" ${editing?.sender === 'yashwanth.krishna@kognozconsulting.com' ? 'selected' : ''}>Yashwanth (yashwanth.krishna@kognozconsulting.com)</option>
       </select>
     </div>
 
     <div class="field">
       <label>Recipient Email *</label>
-      <input name="to" type="email" placeholder="recipient@domain.com" required />
+      <input name="to" type="email" value="${esc(editing?.to || '')}" placeholder="recipient@domain.com" required />
     </div>
 
     <div class="field">
       <label>Subject *</label>
-      <input name="subject" placeholder="Team Pulse Task Digest" required />
+      <input name="subject" value="${esc(editing?.subject || '')}" placeholder="Team Pulse Task Digest" required />
     </div>
 
     <div class="field">
       <label>Message Content *</label>
-      <textarea name="body" rows="4" placeholder="Write your message here..." required></textarea>
+      <textarea name="body" rows="4" placeholder="Write your message here..." required>${esc(editing?.body || '')}</textarea>
     </div>
 
     <div class="modal-actions">
@@ -557,7 +564,7 @@ function renderEmailModalForm(isSubmitting, error) {
   </form>`;
 }
 
-function renderLoginModalForm(isSubmitting, error) {
+function renderLoginModalForm(isSubmitting, error, editing = null) {
   return `
   <div class="modal-head">
     <div>
@@ -572,7 +579,7 @@ function renderLoginModalForm(isSubmitting, error) {
   <form id="loginForm">
     <div class="field">
       <label>Username</label>
-      <input name="username" placeholder="Your username" required autocomplete="username" autofocus />
+      <input name="username" value="${esc(editing?.username || '')}" placeholder="Your username" required autocomplete="username" autofocus />
     </div>
 
     <div class="field">
@@ -1110,6 +1117,35 @@ const handleSearchDebounced = debounce((value) => {
   S_STORE.setFilter('search', value);
 }, 200);
 
+function saveActiveModalDraft() {
+  const modal = S_STORE.getState().ui.modal;
+  if (!modal) {
+    try { sessionStorage.removeItem('tp_modal_draft'); } catch {}
+    return;
+  }
+
+  const formData = {};
+  const modalBox = document.getElementById('activeModalBox');
+  if (modalBox) {
+    const form = modalBox.querySelector('form');
+    if (form) {
+      const data = new FormData(form);
+      for (const [k, v] of data.entries()) {
+        formData[k] = v;
+      }
+    }
+  }
+
+  try {
+    sessionStorage.setItem('tp_modal_draft', JSON.stringify({
+      type: modal.type,
+      editing: modal.editing,
+      formData,
+      timestamp: Date.now(),
+    }));
+  } catch {}
+}
+
 const handleHistorySearchDebounced = debounce((value) => {
   S_STORE.setHistoryFilter('search', value);
 }, 200);
@@ -1120,6 +1156,9 @@ document.addEventListener('input', (e) => {
   }
   if (e.target.id === 'historySearchInput') {
     handleHistorySearchDebounced(e.target.value);
+  }
+  if (e.target.closest('#activeModalBox')) {
+    saveActiveModalDraft();
   }
 });
 
@@ -1136,6 +1175,9 @@ document.addEventListener('change', (e) => {
     reportOptionsState.aiSummary = null;
     reportOptionsState.aiOutcomes = null;
     updateModalDom();
+  }
+  if (e.target.closest('#activeModalBox')) {
+    saveActiveModalDraft();
   }
 });
 
@@ -1176,7 +1218,7 @@ document.addEventListener('submit', async (e) => {
     const fd = new FormData(e.target);
     const modal = S_STORE.getState().ui.modal;
     const editing = modal?.editing;
-    const isEdit = !!editing;
+    const isEdit = !!(editing && editing.id);
 
     const payload = {
       title: fd.get('title'),
@@ -1383,6 +1425,7 @@ document.addEventListener('click', async (e) => {
           descEl.value = res.polishedDescription;
           descEl.focus();
           descEl.classList.add('field-pulse-highlight');
+          saveActiveModalDraft();
           setTimeout(() => {
             descEl.classList.remove('field-pulse-highlight');
           }, 1600);

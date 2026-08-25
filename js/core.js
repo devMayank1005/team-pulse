@@ -10,6 +10,34 @@ class Store {
       savedUser = null;
     }
 
+    let initialModal = null;
+    try {
+      const rawDraft = sessionStorage.getItem('tp_modal_draft');
+      if (rawDraft) {
+        const draft = JSON.parse(rawDraft);
+        if (draft && draft.type && (Date.now() - (draft.timestamp || 0) < 86400000)) {
+          const fd = draft.formData || {};
+          if (draft.type === 'task') {
+            const restoredEditing = {
+              ...(draft.editing || {}),
+              title: fd.title !== undefined ? fd.title : (draft.editing?.title || ''),
+              description: fd.description !== undefined ? fd.description : (draft.editing?.description || ''),
+              assignee_id: fd.assigneeId !== undefined ? fd.assigneeId : (draft.editing?.assignee_id || ''),
+              priority: fd.priority !== undefined ? fd.priority : (draft.editing?.priority || 'normal'),
+              due_date: fd.dueDate !== undefined ? fd.dueDate : (draft.editing?.due_date || ''),
+              status: fd.status !== undefined ? fd.status : (draft.editing?.status || draft.editing?._initialStatus || 'open'),
+            };
+            if (draft.editing?.id) restoredEditing.id = draft.editing.id;
+            initialModal = { type: 'task', editing: restoredEditing, error: null };
+          } else {
+            initialModal = { type: draft.type, editing: draft.formData ? { ...(draft.editing || {}), ...draft.formData } : (draft.editing || null), error: null };
+          }
+        }
+      }
+    } catch {
+      initialModal = null;
+    }
+
     this._state = {
       auth: {
         token: localStorage.getItem('tp_token') || null,
@@ -29,7 +57,7 @@ class Store {
         sort: 'due_date_asc',
       },
       ui: {
-        modal: null, // { type: 'task'|'user'|'email'|'login', editing: object|null, error: string|null }
+        modal: initialModal, // restored on page reload/refresh if user was editing
         isInitialLoading: true,
         submitting: {}, // e.g. { task: true, login: true, ... }
         activeMobileCol: 'all', // 'all' | 'open' | 'in_progress' | 'done'
@@ -212,11 +240,22 @@ class Store {
   openModal(type, editingOrData = null, error = null) {
     this._state.ui.modal = { type, editing: editingOrData, error };
     this._notify('ui');
+    try {
+      sessionStorage.setItem('tp_modal_draft', JSON.stringify({
+        type,
+        editing: editingOrData,
+        formData: {},
+        timestamp: Date.now(),
+      }));
+    } catch {}
   }
 
   closeModal() {
     this._state.ui.modal = null;
     this._notify('ui');
+    try {
+      sessionStorage.removeItem('tp_modal_draft');
+    } catch {}
   }
 
   setSubmitting(key, isSubmitting) {
