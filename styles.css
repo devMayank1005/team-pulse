@@ -616,6 +616,55 @@ a {
   box-shadow: var(--shadow-xs);
 }
 
+/* Real-time WebSocket Status Pill in Topbar */
+.realtime-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: all var(--transition-fast);
+  cursor: default;
+  user-select: none;
+}
+.realtime-status-pill.is-live {
+  background: rgba(240, 253, 244, 0.95);
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.1);
+}
+.realtime-status-pill.is-connecting {
+  background: rgba(254, 252, 232, 0.95);
+  color: #a16207;
+  border: 1px solid #fef08a;
+}
+.realtime-status-pill.is-offline {
+  background: rgba(248, 250, 252, 0.95);
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+.realtime-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.realtime-status-pill.is-live .realtime-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: realtimeDotPulse 2s infinite;
+}
+@keyframes realtimeDotPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
 /* ============================================================================
    MAIN WORKSPACE LAYOUT
    ============================================================================ */

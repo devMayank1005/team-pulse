@@ -87,6 +87,7 @@ class Store {
         submitting: {}, // e.g. { task: true, login: true, ... }
         activeMobileCol: 'all', // 'all' | 'open' | 'in_progress' | 'done'
         activeView: 'board', // 'board' | 'history'
+        realtimeStatus: 'connecting', // 'live' | 'connecting' | 'offline'
       },
       history: {
         tab: 'tasks', // 'tasks' | 'activity'
@@ -235,6 +236,84 @@ class Store {
       this._state.server.tasks = prevTasks;
       this._notify('tasks');
     };
+  }
+
+  // ---------- Realtime Live Updates & Reflection ----------
+  setRealtimeStatus(status) {
+    if (this._state.ui.realtimeStatus === status) return;
+    this._state.ui.realtimeStatus = status;
+    this._notify('ui');
+  }
+
+  setTasksFromSync(tasks) {
+    if (!Array.isArray(tasks)) return;
+    const current = this._state.server.tasks;
+    if (current.length === tasks.length) {
+      let isIdentical = true;
+      for (let i = 0; i < tasks.length; i++) {
+        const a = current[i];
+        const b = tasks[i];
+        if (!a || !b || a.id !== b.id || a.status !== b.status || a.updated_at !== b.updated_at || a.title !== b.title || a.assignee_id !== b.assignee_id || a.priority !== b.priority || a.due_date !== b.due_date) {
+          isIdentical = false;
+          break;
+        }
+      }
+      if (isIdentical) return;
+    }
+    this._state.server.tasks = tasks;
+    this._state.server.lastSync = Date.now();
+    this._notify('tasks');
+  }
+
+  applyRealtimeTaskChange(type, record, oldRecord) {
+    const currentTasks = [...this._state.server.tasks];
+    if (type === 'INSERT' && record && record.id) {
+      const exists = currentTasks.some(t => t.id === record.id);
+      if (!exists) {
+        this._state.server.tasks = [record, ...currentTasks];
+        this._notify('tasks');
+      }
+    } else if (type === 'UPDATE' && record && record.id) {
+      let found = false;
+      const updated = currentTasks.map(t => {
+        if (t.id === record.id) {
+          found = true;
+          return { ...t, ...record };
+        }
+        return t;
+      });
+      if (found) {
+        this._state.server.tasks = updated;
+      } else {
+        this._state.server.tasks = [record, ...currentTasks];
+      }
+      this._notify('tasks');
+    } else if (type === 'DELETE') {
+      const targetId = oldRecord?.id || record?.id;
+      if (targetId) {
+        this._state.server.tasks = currentTasks.filter(t => t.id !== targetId);
+        this._notify('tasks');
+      }
+    }
+  }
+
+  applyRealtimeUserChange(type, record, oldRecord) {
+    const currentUsers = [...this._state.server.users];
+    if (type === 'INSERT' && record && record.id) {
+      if (!currentUsers.some(u => u.id === record.id)) {
+        this._state.server.users = [...currentUsers, record];
+        this._notify('users');
+      }
+    } else if (type === 'UPDATE' && record && record.id) {
+      this._state.server.users = currentUsers.map(u => u.id === record.id ? { ...u, ...record } : u);
+      this._notify('users');
+    } else if (type === 'DELETE') {
+      const targetId = oldRecord?.id || record?.id;
+      if (targetId) {
+        this._state.server.users = currentUsers.filter(u => u.id !== targetId);
+        this._notify('users');
+      }
+    }
   }
 
   // ---------- Filter Actions ----------
@@ -881,3 +960,235 @@ function generateKognozReportData(tasks = [], options = {}, users = []) {
     tasks: filteredTasks,
   };
 }
+
+// ============================================================================
+// REALTIME WEBSOCKET MANAGER
+// ============================================================================
+
+class RealtimeManager {
+  constructor(store) {
+    this.store = store;
+    this.ws = null;
+    this.status = 'connecting';
+    this.reconnectTimer = null;
+    this.heartbeatTimer = null;
+    this.pollTimer = null;
+    this.refCount = 0;
+    this.config = null;
+    this.isTabActive = !document.hidden;
+    this.reconnectAttempts = 0;
+
+    document.addEventListener('visibilitychange', () => {
+      this.isTabActive = !document.hidden;
+      if (this.isTabActive) {
+        this.performDeltaSync();
+        if (this.status !== 'live' && this.store.getState().auth.token) {
+          this.connect();
+        }
+      }
+    });
+  }
+
+  async init() {
+    const token = this.store.getState().auth.token;
+    if (!token) {
+      this.setStatus('offline');
+      return;
+    }
+
+    try {
+      const res = await api('/api/realtime-config');
+      if (res && res.enabled) {
+        this.config = res;
+        this.connect();
+      }
+    } catch (err) {
+      console.warn('Realtime config fetch fallback to adaptive polling:', err.message);
+      this.startFallbackPolling();
+    }
+  }
+
+  connect() {
+    const token = this.store.getState().auth.token;
+    if (!token) {
+      this.disconnect();
+      return;
+    }
+
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    if (!this.config || !this.config.wsUrl || typeof WebSocket === 'undefined') {
+      this.startFallbackPolling();
+      return;
+    }
+
+    this.setStatus('connecting');
+    clearTimeout(this.reconnectTimer);
+
+    try {
+      this.ws = new WebSocket(this.config.wsUrl);
+
+      this.ws.onopen = () => {
+        this.reconnectAttempts = 0;
+        this.setStatus('live');
+        this.joinChannels();
+        this.startHeartbeat();
+        this.performDeltaSync();
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          this.handleMessage(msg);
+        } catch (e) {
+          console.warn('Malformed realtime WS message:', e);
+        }
+      };
+
+      this.ws.onerror = (err) => {
+        console.warn('Realtime WebSocket notice:', err);
+      };
+
+      this.ws.onclose = () => {
+        this.cleanupSocket();
+        this.setStatus('connecting');
+        this.scheduleReconnect();
+      };
+    } catch (err) {
+      console.warn('Realtime connection initial error:', err);
+      this.scheduleReconnect();
+    }
+  }
+
+  joinChannels() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    // Join tasks table changes channel (Supabase Phoenix Realtime protocol)
+    this.send({
+      topic: 'realtime:public:tasks',
+      event: 'phx_join',
+      payload: {
+        config: {
+          postgres_changes: [
+            { event: '*', schema: 'public', table: 'tasks' }
+          ]
+        }
+      },
+      ref: String(++this.refCount)
+    });
+
+    // Join users table changes channel
+    this.send({
+      topic: 'realtime:public:users',
+      event: 'phx_join',
+      payload: {
+        config: {
+          postgres_changes: [
+            { event: '*', schema: 'public', table: 'users' }
+          ]
+        }
+      },
+      ref: String(++this.refCount)
+    });
+  }
+
+  handleMessage(msg) {
+    if (!msg) return;
+
+    // Handle Supabase Realtime Postgres Changes
+    if (msg.event === 'postgres_changes' && msg.payload && msg.payload.data) {
+      const { type, record, old_record, table } = msg.payload.data;
+      if (table === 'tasks') {
+        this.store.applyRealtimeTaskChange(type, record, old_record);
+      } else if (table === 'users') {
+        this.store.applyRealtimeUserChange(type, record, old_record);
+      }
+    }
+  }
+
+  send(data) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    }
+  }
+
+  startHeartbeat() {
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.send({
+          topic: 'phoenix',
+          event: 'heartbeat',
+          payload: {},
+          ref: 'hb_' + Date.now()
+        });
+      }
+    }, 25000);
+  }
+
+  scheduleReconnect() {
+    this.startFallbackPolling();
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts++), 15000);
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      if (this.store.getState().auth.token) {
+        this.connect();
+      }
+    }, delay);
+  }
+
+  startFallbackPolling() {
+    if (this.pollTimer) return;
+    const interval = this.config?.pollFallbackMs || 5000;
+    this.pollTimer = setInterval(() => {
+      if (this.isTabActive && this.store.getState().auth.token) {
+        this.performDeltaSync();
+      }
+    }, interval);
+  }
+
+  stopFallbackPolling() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+
+  async performDeltaSync() {
+    const token = this.store.getState().auth.token;
+    if (!token) return;
+
+    try {
+      const res = await api('/api/tasks');
+      if (res && res.tasks) {
+        this.store.setTasksFromSync(res.tasks);
+      }
+    } catch (e) {}
+  }
+
+  setStatus(status) {
+    this.status = status;
+    this.store.setRealtimeStatus(status);
+  }
+
+  cleanupSocket() {
+    clearInterval(this.heartbeatTimer);
+    if (this.ws) {
+      try { this.ws.close(); } catch {}
+      this.ws = null;
+    }
+  }
+
+  disconnect() {
+    this.cleanupSocket();
+    this.stopFallbackPolling();
+    clearTimeout(this.reconnectTimer);
+    this.setStatus('offline');
+  }
+}
+
+const REALTIME_MANAGER = new RealtimeManager(S_STORE);
+window.REALTIME_MANAGER = REALTIME_MANAGER;
+window.S_STORE = S_STORE;

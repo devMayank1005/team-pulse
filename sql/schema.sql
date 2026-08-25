@@ -83,3 +83,7 @@ grant select, insert, update, delete on table audit_log to anon, authenticated, 
 insert into users (username, password_hash, name, email, role)
 values ('admin', '<PASTE_BCRYPT_HASH_HERE>', 'Admin', 'admin@yourcompany.com', 'admin')
 on conflict (username) do nothing;
+
+-- Realtime WebSocket Broadcasts — enables instant live updates across team browsers
+alter publication supabase_realtime add table tasks;
+alter publication supabase_realtime add table users;

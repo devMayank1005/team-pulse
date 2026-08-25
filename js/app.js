@@ -35,6 +35,10 @@ function renderHeader() {
     </nav>
 
     <div class="topbar-right">
+      <div class="realtime-status-pill ${state.ui.realtimeStatus === 'live' ? 'is-live' : state.ui.realtimeStatus === 'connecting' ? 'is-connecting' : 'is-offline'}" title="${state.ui.realtimeStatus === 'live' ? 'Real-time WebSocket connected' : state.ui.realtimeStatus === 'connecting' ? 'Connecting to real-time live sync...' : 'Live sync offline'}">
+        <span class="realtime-dot"></span>
+        <span class="realtime-label">${state.ui.realtimeStatus === 'live' ? 'Live' : state.ui.realtimeStatus === 'connecting' ? 'Syncing...' : 'Offline'}</span>
+      </div>
       <button class="btn btn-secondary btn-sm" data-action="open-report" title="Export PDF Executive Report">
         ${Icons.fileText} Export Report
       </button>
@@ -1577,6 +1581,9 @@ document.addEventListener('click', async (e) => {
   }
 
   if (action === 'logout') {
+    if (window.REALTIME_MANAGER) {
+      window.REALTIME_MANAGER.disconnect();
+    }
     S_STORE.clearAuth();
     S_STORE.addToast({ type: 'info', title: 'Signed Out', message: 'You have been signed out safely.' });
     return;
@@ -1850,6 +1857,11 @@ async function loadInitialData() {
     if (currentSelf && uRes.users) {
       const freshSelf = uRes.users.find(x => x.id === currentSelf.id);
       if (freshSelf) S_STORE.updateUserSelf(freshSelf);
+    }
+
+    // Connect to WebSocket Live Updates
+    if (window.REALTIME_MANAGER) {
+      window.REALTIME_MANAGER.init();
     }
   } catch (err) {
     if (err.isAuthError) {
