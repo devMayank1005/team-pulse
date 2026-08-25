@@ -307,6 +307,45 @@ a {
   margin-top: 4px;
 }
 
+.btn-ai-polish {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: linear-gradient(135deg, rgba(238, 242, 255, 0.95) 0%, rgba(224, 242, 254, 0.95) 100%);
+  border: 1px solid rgba(147, 197, 253, 0.9);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
+}
+.btn-ai-polish:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border-color: #3b82f6;
+  color: #1e40af;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.18);
+}
+.btn-ai-polish:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-ai-polish:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+@keyframes pulseHighlight {
+  0% { background-color: rgba(219, 234, 254, 0.6); border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+  50% { background-color: rgba(240, 253, 250, 0.8); border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.2); }
+  100% { background-color: #ffffff; border-color: var(--glass-border-focus); box-shadow: none; }
+}
+.field-pulse-highlight {
+  animation: pulseHighlight 1.5s ease-out;
+}
+
 /* ============================================================================
    BADGES & PILLS
    ============================================================================ */
