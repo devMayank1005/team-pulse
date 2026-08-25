@@ -307,6 +307,60 @@ a {
   margin-top: 4px;
 }
 
+/* Email Attachment Styles */
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 6px 10px;
+  font-size: 12px;
+  gap: 8px;
+}
+.attachment-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.attachment-name {
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.attachment-size {
+  font-size: 11px;
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+}
+.attachment-remove {
+  background: transparent;
+  border: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  transition: all var(--transition-fast);
+}
+.attachment-remove:hover {
+  color: var(--priority-high);
+  background: var(--priority-high-bg);
+}
+
 /* ============================================================================
    BADGES & PILLS
    ============================================================================ */

@@ -18,7 +18,7 @@ module.exports = async function handler(req, res) {
   const check = await validateToken(token, SESSION_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   if (!check.valid) return res.status(401).json({ error: 'Not authenticated' });
   if (!canSendAs(check.payload.email)) return safeError(res, 403, 'Only approved mail senders can send email');
-  const { sender = ALLOWED_SENDERS[0], to, subject, body } = req.body || {};
+  const { sender = ALLOWED_SENDERS[0], to, subject, body, attachments = [] } = req.body || {};
   if (!senderAllowed(sender)) return safeError(res, 403, 'This sender is not approved');
   if (!to || !subject || !body) return safeError(res, 400, 'to, subject, and body are required');
 
@@ -28,8 +28,9 @@ module.exports = async function handler(req, res) {
       to: [to],
       subject,
       text: body,
+      attachments: Array.isArray(attachments) ? attachments : [],
     });
-    return res.status(200).json({ ok: true, message: 'Test email sent', sender: result.sender });
+    return res.status(200).json({ ok: true, message: 'Email sent successfully', sender: result.sender });
   } catch (err) {
     return serverError(res, err, 'test-email.js');
   }

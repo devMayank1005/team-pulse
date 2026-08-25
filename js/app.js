@@ -514,12 +514,48 @@ function renderUserModalForm(users, currentUser, isSubmitting, error, editing = 
   </form>`;
 }
 
+let emailAttachmentsState = [];
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function renderEmailAttachmentListHtml() {
+  if (!emailAttachmentsState || emailAttachmentsState.length === 0) {
+    return '';
+  }
+  return `
+  <div class="attachment-list" id="emailAttachmentItems">
+    ${emailAttachmentsState.map((att, idx) => `
+      <div class="attachment-item">
+        <div class="attachment-info">
+          <span style="display:inline-flex;align-items:center;color:var(--brand-primary);">${Icons.paperclip}</span>
+          <span class="attachment-name" title="${esc(att.name)}">${esc(att.name)}</span>
+          <span class="attachment-size">${formatFileSize(att.size)}</span>
+        </div>
+        <button type="button" class="attachment-remove" data-action="remove-email-attachment" data-idx="${idx}" title="Remove attachment">✕</button>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function updateEmailAttachmentsDom() {
+  const container = document.getElementById('emailAttachmentContainer');
+  if (container) {
+    container.innerHTML = renderEmailAttachmentListHtml();
+  }
+}
+
 function renderEmailModalForm(isSubmitting, error, editing = null) {
   return `
   <div class="modal-head">
     <div>
       <h2 class="modal-title">Send Email</h2>
-      <p class="modal-desc">Send messages directly via Microsoft Graph</p>
+      <p class="modal-desc">Send messages and attachments directly via Microsoft Graph</p>
     </div>
     <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
   </div>
@@ -548,6 +584,20 @@ function renderEmailModalForm(isSubmitting, error, editing = null) {
     <div class="field">
       <label>Message Content *</label>
       <textarea name="body" rows="4" placeholder="Write your message here..." required>${esc(editing?.body || '')}</textarea>
+    </div>
+
+    <div class="field">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <label style="margin-bottom:0">Attachments</label>
+        <label for="emailAttachmentInput" class="btn btn-secondary btn-sm" style="cursor:pointer;font-size:11.5px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;margin-bottom:0">
+          ${Icons.paperclip} <span>Attach Files</span>
+        </label>
+        <input type="file" id="emailAttachmentInput" multiple style="display:none" />
+      </div>
+      <div id="emailAttachmentContainer">
+        ${renderEmailAttachmentListHtml()}
+      </div>
+      <div class="field-hint">Attach documents, PDFs, or images (up to 4MB per file).</div>
     </div>
 
     <div class="modal-actions">
@@ -1177,6 +1227,38 @@ document.addEventListener('change', (e) => {
     reportOptionsState.aiOutcomes = null;
     updateModalDom();
   }
+  if (e.target.id === 'emailAttachmentInput') {
+    const files = Array.from(e.target.files || []);
+    if (files.length) {
+      for (const file of files) {
+        if (file.size > 4.5 * 1024 * 1024) {
+          S_STORE.addToast({
+            type: 'warning',
+            title: 'File Too Large',
+            message: `"${file.name}" exceeds the 4MB limit.`,
+          });
+          continue;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          const base64Data = typeof result === 'string' ? result.split(',')[1] : '';
+          if (base64Data) {
+            emailAttachmentsState.push({
+              name: file.name,
+              contentType: file.type || 'application/octet-stream',
+              size: file.size,
+              contentBytes: base64Data,
+            });
+            updateEmailAttachmentsDom();
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+      e.target.value = '';
+    }
+  }
   if (e.target.closest('#activeModalBox')) {
     saveActiveModalDraft();
   }
@@ -1333,11 +1415,17 @@ document.addEventListener('submit', async (e) => {
       to: fd.get('to'),
       subject: fd.get('subject'),
       body: fd.get('body'),
+      attachments: emailAttachmentsState.map(a => ({
+        name: a.name,
+        contentType: a.contentType,
+        contentBytes: a.contentBytes,
+      })),
     };
 
     S_STORE.setSubmitting('email', true);
     try {
       await api('/api/test-email', { method: 'POST', body: JSON.stringify(body) });
+      emailAttachmentsState = [];
       S_STORE.closeModal();
       S_STORE.addToast({ type: 'success', title: 'Email Dispatched', message: `Sent to ${body.to}` });
     } catch (err) {
@@ -1363,6 +1451,15 @@ document.addEventListener('click', async (e) => {
 
   if (action === 'close-modal') {
     S_STORE.closeModal();
+    return;
+  }
+
+  if (action === 'remove-email-attachment') {
+    const idx = parseInt(btn.dataset.idx, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < emailAttachmentsState.length) {
+      emailAttachmentsState.splice(idx, 1);
+      updateEmailAttachmentsDom();
+    }
     return;
   }
 
@@ -1410,6 +1507,7 @@ document.addEventListener('click', async (e) => {
   }
 
   if (action === 'open-email') {
+    emailAttachmentsState = [];
     S_STORE.openModal('email');
     return;
   }

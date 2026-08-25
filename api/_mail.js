@@ -36,7 +36,7 @@ async function graphToken() {
   return data.access_token;
 }
 
-async function sendMicrosoftEmail({ sender, to, subject, text, html }) {
+async function sendMicrosoftEmail({ sender, to, subject, text, html, attachments = [] }) {
   const normalizedSender = normalizeSender(sender);
   if (!normalizedSender) {
     const error = new Error('Sender is not approved');
@@ -56,15 +56,28 @@ async function sendMicrosoftEmail({ sender, to, subject, text, html }) {
     throw error;
   }
 
+  const message = {
+    subject: String(subject || ''),
+    body: { contentType: html ? 'HTML' : 'Text', content: String(html || text || '') },
+    toRecipients: to.map(address => ({ emailAddress: { address: String(address).trim() } })),
+  };
+
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    message.attachments = attachments
+      .filter(att => att && att.name && att.contentBytes)
+      .map(att => ({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: String(att.name),
+        contentType: String(att.contentType || 'application/octet-stream'),
+        contentBytes: String(att.contentBytes),
+      }));
+  }
+
   const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(normalizedSender)}/sendMail`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      message: {
-        subject: String(subject || ''),
-        body: { contentType: html ? 'HTML' : 'Text', content: String(html || text || '') },
-        toRecipients: to.map(address => ({ emailAddress: { address: String(address).trim() } })),
-      },
+      message,
       saveToSentItems: true,
     }),
   });
