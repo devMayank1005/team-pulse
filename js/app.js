@@ -23,17 +23,11 @@ const Icons = {
   fileText: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
   download: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
   sparkles: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`,
-  kognozLogo: (width = 135, height = 36) => `
-    <svg width="${width}" height="${height}" viewBox="0 0 160 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <text x="0" y="24" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-weight="900" font-size="23" fill="#00385c" letter-spacing="1">KOGN</text>
-      <g transform="translate(71, 6)">
-        <circle cx="9.5" cy="9.5" r="9" stroke="#00385c" stroke-width="2.8" fill="none"/>
-        <path d="M5.5 13.5C7.5 8 12.5 6 14.5 10.5" stroke="#0ea5e9" stroke-width="2.2" stroke-linecap="round"/>
-        <path d="M7.5 15.5C11.5 15.5 15.5 10.5 12.5 5.5" stroke="#10b981" stroke-width="1.8" stroke-linecap="round"/>
-      </g>
-      <text x="94" y="24" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-weight="900" font-size="23" fill="#00385c" letter-spacing="1">Z</text>
-      <text x="0" y="37" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-weight="600" font-style="italic" font-size="10" fill="#0077b6">Maximising Human Potential</text>
-    </svg>`,
+  kognozLogo: (height = 36, isDarkBg = false) => `
+    <div style="display:inline-flex;flex-direction:column;gap:3px;align-items:flex-start">
+      <img src="/assets/kognoz-logo.png" alt="KOGNOZ" style="height:${height}px;width:auto;object-fit:contain;${isDarkBg ? 'filter:brightness(0) invert(1);' : ''}" />
+      <span style="font-family:'Plus Jakarta Sans', -apple-system, sans-serif;font-size:${Math.max(9, Math.round(height * 0.28))}px;font-weight:600;font-style:italic;color:${isDarkBg ? '#38bdf8' : '#0077b6'};letter-spacing:0.02em">Maximising Human Potential</span>
+    </div>`,
   kognozMotif: (size = 180) => `
     <svg width="${size}" height="${size}" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="130" cy="70" r="65" fill="#06b6d4" fill-opacity="0.4" />
@@ -1000,7 +994,8 @@ function printKognozReport(reportData, aiSummary, aiOutcomes) {
   const totalDeliverableSlides = Math.max(tasks.length, 1);
   const totalPages = 1 + totalDeliverableSlides + (aiSummary ? 1 : 0);
 
-  const logoSvg = Icons.kognozLogo(170, 44);
+  const logoSvg = Icons.kognozLogo(38);
+  const logoSvgDark = Icons.kognozLogo(38, true);
   const motifSvg = Icons.kognozMotif(240);
 
   const html = `
@@ -1325,18 +1320,7 @@ function printKognozReport(reportData, aiSummary, aiOutcomes) {
       ` : ''}
     </div>
     <div class="slide-footer">
-      <div>
-        <svg width="170" height="44" viewBox="0 0 160 42" fill="none">
-          <text x="0" y="24" font-family="'Plus Jakarta Sans', sans-serif" font-weight="900" font-size="23" fill="#ffffff" letter-spacing="1">KOGN</text>
-          <g transform="translate(71, 6)">
-            <circle cx="9.5" cy="9.5" r="9" stroke="#ffffff" stroke-width="2.8" fill="none"/>
-            <path d="M5.5 13.5C7.5 8 12.5 6 14.5 10.5" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
-            <path d="M7.5 15.5C11.5 15.5 15.5 10.5 12.5 5.5" stroke="#34d399" stroke-width="1.8" stroke-linecap="round"/>
-          </g>
-          <text x="94" y="24" font-family="'Plus Jakarta Sans', sans-serif" font-weight="900" font-size="23" fill="#ffffff" letter-spacing="1">Z</text>
-          <text x="0" y="37" font-family="'Plus Jakarta Sans', sans-serif" font-weight="600" font-style="italic" font-size="10" fill="#38bdf8">Maximising Human Potential</text>
-        </svg>
-      </div>
+      <div>${logoSvgDark}</div>
       <div class="footer-url">kognozconsulting.com</div>
     </div>
   </div>` : ''}
