@@ -18,7 +18,11 @@ module.exports = async function handler(req, res) {
   if (!auth.valid) return res.status(401).json({ error: 'Unauthorized: valid session required' });
 
   try {
-    const { tasks = [], assigneeName = 'Team', timeframe = 'All Time' } = req.body || {};
+    let body = req.body;
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch (e) { body = {}; }
+    }
+    const { tasks = [], assigneeName = 'Team', timeframe = 'All Time' } = body || {};
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return res.status(200).json({

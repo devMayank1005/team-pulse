@@ -874,7 +874,7 @@ function renderLoginModalForm(isSubmitting, error) {
 let reportOptionsState = {
   assigneeId: 'all',
   timeframe: 'all',
-  includeOpen: false,
+  statusScope: 'all_status', // 'all_status', 'done_only', 'in_progress'
   aiSummary: null,
   aiOutcomes: null,
   isGeneratingAi: false,
@@ -888,7 +888,7 @@ function renderExportReportModal(options = {}, isSubmitting = false, error = nul
   const currentOpts = {
     assigneeId: reportOptionsState.assigneeId,
     timeframe: reportOptionsState.timeframe,
-    includeOpen: reportOptionsState.includeOpen,
+    statusScope: reportOptionsState.statusScope,
   };
 
   const reportData = generateKognozReportData(tasks, currentOpts, users);
@@ -910,7 +910,7 @@ function renderExportReportModal(options = {}, isSubmitting = false, error = nul
 
   ${error ? `<div class="err-banner">${error}</div>` : ''}
 
-  <div class="report-config-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+  <div class="report-config-grid" style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;margin-bottom:14px">
     <div class="field" style="margin-bottom:0">
       <label>Assignee / Scope</label>
       <select id="reportAssigneeSelect" data-action="change-report-opt" data-opt="assigneeId">
@@ -920,10 +920,19 @@ function renderExportReportModal(options = {}, isSubmitting = false, error = nul
     </div>
 
     <div class="field" style="margin-bottom:0">
+      <label>Status Scope</label>
+      <select id="reportStatusSelect" data-action="change-report-opt" data-opt="statusScope">
+        <option value="all_status" ${currentOpts.statusScope === 'all_status' ? 'selected' : ''}>All Tasks (Full Scope)</option>
+        <option value="done_only" ${currentOpts.statusScope === 'done_only' ? 'selected' : ''}>Completed Tasks Only</option>
+        <option value="in_progress" ${currentOpts.statusScope === 'in_progress' ? 'selected' : ''}>In Progress Only</option>
+      </select>
+    </div>
+
+    <div class="field" style="margin-bottom:0">
       <label>Timeframe</label>
       <select id="reportTimeframeSelect" data-action="change-report-opt" data-opt="timeframe">
-        <option value="all" ${currentOpts.timeframe === 'all' ? 'selected' : ''}>All Completed Time</option>
-        <option value="today" ${currentOpts.timeframe === 'today' ? 'selected' : ''}>Completed Today</option>
+        <option value="all" ${currentOpts.timeframe === 'all' ? 'selected' : ''}>All Time</option>
+        <option value="today" ${currentOpts.timeframe === 'today' ? 'selected' : ''}>Today</option>
         <option value="week" ${currentOpts.timeframe === 'week' ? 'selected' : ''}>Past 7 Days</option>
         <option value="month" ${currentOpts.timeframe === 'month' ? 'selected' : ''}>Past 30 Days</option>
       </select>
@@ -955,7 +964,7 @@ function renderExportReportModal(options = {}, isSubmitting = false, error = nul
     </div>
     ${reportData.tasks.length === 0 ? `
       <div style="text-align:center;padding:24px 10px;color:var(--ink-muted);font-size:13px">
-        No completed deliverables found for ${esc(reportData.assigneeName)} in this timeframe.
+        No deliverables found for ${esc(reportData.assigneeName)} with current filters. Try changing Status Scope to "All Tasks".
       </div>
     ` : `
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -969,6 +978,7 @@ function renderExportReportModal(options = {}, isSubmitting = false, error = nul
             </div>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
               <span class="badge ${t.priority === 'high' ? 'badge-high' : 'badge-normal'}" style="font-size:10px;padding:1px 5px">${t.priority || 'normal'}</span>
+              <span class="badge ${t.status === 'done' ? 'badge-done' : t.status === 'in_progress' ? 'badge-today' : 'badge-normal'}" style="font-size:10px;padding:1px 5px">${t.status}</span>
               ${comp ? `<span class="badge badge-done" style="font-size:10px;padding:1px 5px">${comp.short}</span>` : ''}
             </div>
           </div>`;
@@ -979,7 +989,7 @@ function renderExportReportModal(options = {}, isSubmitting = false, error = nul
 
   <div class="modal-actions" style="margin-top:0">
     <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
-    <button type="button" class="btn btn-primary" data-action="print-report" ${reportData.tasks.length === 0 ? 'disabled' : ''} style="gap:6px">
+    <button type="button" class="btn btn-primary" data-action="print-report" style="gap:6px">
       ${Icons.download} Export & Print Kognoz PDF
     </button>
   </div>`;
@@ -987,15 +997,8 @@ function renderExportReportModal(options = {}, isSubmitting = false, error = nul
 
 function printKognozReport(reportData, aiSummary, aiOutcomes) {
   const tasks = reportData.tasks || [];
-  const totalDeliverableSlides = tasks.length;
+  const totalDeliverableSlides = Math.max(tasks.length, 1);
   const totalPages = 1 + totalDeliverableSlides + (aiSummary ? 1 : 0);
-
-  // Generate printable HTML slides
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    alert('Please allow pop-ups in your browser to download and print the Kognoz Executive PDF report.');
-    return;
-  }
 
   const logoSvg = Icons.kognozLogo(170, 44);
   const motifSvg = Icons.kognozMotif(240);
@@ -1008,7 +1011,7 @@ function printKognozReport(reportData, aiSummary, aiOutcomes) {
   <title>Kognoz Executive Report — ${esc(reportData.assigneeName)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,700;1,6..72,500;1,6..72,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -1228,11 +1231,11 @@ function printKognozReport(reportData, aiSummary, aiOutcomes) {
     <div class="slide-content">
       <h1 class="cover-title">Deliverables & <span>Velocity Digest</span></h1>
       <p class="cover-desc">
-        Comprehensive executive record of completed deliverables, precision completion timestamps, and operational milestones achieved by <strong>${esc(reportData.assigneeName)}</strong>.
+        Comprehensive executive record of deliverables, completion timestamps, and operational milestones achieved by <strong>${esc(reportData.assigneeName)}</strong>.
       </p>
       <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;max-width:540px;display:grid;grid-template-columns:repeat(3, 1fr);gap:14px">
         <div>
-          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">Completed Tasks</div>
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">Deliverables</div>
           <div style="font-size:22px;font-weight:800;color:#00385c">${reportData.totalTasks}</div>
         </div>
         <div>
@@ -1252,9 +1255,26 @@ function printKognozReport(reportData, aiSummary, aiOutcomes) {
   </div>
 
   <!-- DELIVERABLE SLIDES (matching sample PDF Pages 2-5) -->
-  ${tasks.map((t, idx) => {
+  ${tasks.length === 0 ? `
+    <div class="slide-page">
+      <div class="watermark-num">01</div>
+      <div class="slide-header">
+        <div class="slide-tag">DELIVERABLE SPOTLIGHT</div>
+      </div>
+      <div class="slide-content">
+        <h2 class="slide-headline">No Active Deliverables In Scope</h2>
+        <p class="slide-desc">
+          No tasks found matching the selected timeframe and scope filters for ${esc(reportData.assigneeName)}.
+        </p>
+      </div>
+      <div class="slide-footer">
+        <div>${logoSvg}</div>
+        <div class="page-num">01 / 01</div>
+      </div>
+    </div>
+  ` : tasks.map((t, idx) => {
     const slideNum = String(idx + 1).padStart(2, '0');
-    const compFormatted = t.completed_at ? formatFullDateTime(t.completed_at) : 'Completed';
+    const compFormatted = t.completed_at ? formatFullDateTime(t.completed_at) : (t.status === 'done' ? 'Completed' : `Status: ${t.status}`);
     const timeliness = getTimelinessInfo(t.due_date, t.completed_at);
     const pageFraction = `${slideNum} / ${String(totalPages).padStart(2, '0')}`;
 
@@ -1270,7 +1290,7 @@ function printKognozReport(reportData, aiSummary, aiOutcomes) {
           ${t.description ? esc(t.description) : 'Deliverable successfully executed, validated, and integrated into operational workflow with zero friction.'}
         </p>
         <div class="slide-meta-row">
-          <span class="badge badge-done">✓ Done: ${esc(compFormatted)}</span>
+          <span class="badge ${t.status === 'done' ? 'badge-done' : 'badge-normal'}">✓ ${esc(compFormatted)}</span>
           <span class="badge ${t.priority === 'high' ? 'badge-high' : 'badge-normal'}">Priority: ${(t.priority || 'normal').toUpperCase()}</span>
           ${timeliness.status !== 'none' ? `<span class="badge badge-done">Timeliness: ${timeliness.label}</span>` : ''}
           ${t.due_date ? `<span>Target Due Date: <strong>${t.due_date}</strong></span>` : ''}
@@ -1325,16 +1345,44 @@ function printKognozReport(reportData, aiSummary, aiOutcomes) {
     window.addEventListener('load', () => {
       setTimeout(() => {
         window.print();
-      }, 600);
+      }, 500);
     });
   </script>
 </body>
 </html>`;
 
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
+  try {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      return;
+    }
+  } catch (e) {
+    console.warn('window.open was blocked, using iframe fallback:', e);
+  }
+
+  // Fallback if browser blocked popups: create invisible iframe to print
+  let iframe = document.getElementById('kognozPrintFrame');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'kognozPrintFrame';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+  }
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
 }
+
 
 
 // 9. Toast Container

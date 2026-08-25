@@ -691,11 +691,11 @@ function groupCompletedTasks(tasks, historyFilter = {}, users = []) {
 // KOGNOZ EXECUTIVE WORK REPORT & EXPORT GENERATOR
 // ============================================================================
 
-function generateKognozReportData(tasks, options = {}, users = []) {
+function generateKognozReportData(tasks = [], options = {}, users = []) {
   const {
     assigneeId = 'all',
     timeframe = 'all', // 'today', 'week', 'month', 'all'
-    includeOpen = false,
+    statusScope = 'all_status', // 'done_only', 'all_status', 'in_progress'
   } = options;
 
   const userMap = new Map(users.map(u => [u.id, u.name]));
@@ -710,7 +710,9 @@ function generateKognozReportData(tasks, options = {}, users = []) {
 
   // Filter tasks
   const filteredTasks = tasks.filter(t => {
-    if (!includeOpen && t.status !== 'done') return false;
+    // Status check
+    if (statusScope === 'done_only' && t.status !== 'done') return false;
+    if (statusScope === 'in_progress' && t.status !== 'in_progress') return false;
 
     // Assignee check
     if (assigneeId !== 'all') {
@@ -719,15 +721,17 @@ function generateKognozReportData(tasks, options = {}, users = []) {
     }
 
     // Timeframe check
-    const compDate = t.completed_at ? new Date(t.completed_at) : new Date(t.updated_at || t.created_at || 0);
-    const compDateStr = compDate.toISOString().slice(0, 10);
+    const taskDate = t.completed_at
+      ? new Date(t.completed_at)
+      : new Date(t.updated_at || t.created_at || Date.now());
+    const taskDateStr = taskDate.toISOString().slice(0, 10);
 
     if (timeframe === 'today') {
-      if (compDateStr !== todayStr) return false;
+      if (taskDateStr !== todayStr) return false;
     } else if (timeframe === 'week') {
-      if (compDate < sevenDaysAgo) return false;
+      if (taskDate < sevenDaysAgo) return false;
     } else if (timeframe === 'month') {
-      if (compDate < thirtyDaysAgo) return false;
+      if (taskDate < thirtyDaysAgo) return false;
     }
 
     return true;
