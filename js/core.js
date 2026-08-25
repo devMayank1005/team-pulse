@@ -1,5 +1,30 @@
-// js/core.js — Centralized State Architecture & Resilient API Client
-// No frameworks, no build step. Clean vanilla JavaScript with reactive listeners.
+// Task Draft Storage Helpers (persists unsubmitted work even if dialog is closed)
+function getTaskDraft(taskId) {
+  try {
+    const key = taskId ? `tp_draft_task_${taskId}` : 'tp_draft_task_new';
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveTaskDraft(taskId, formData) {
+  try {
+    const key = taskId ? `tp_draft_task_${taskId}` : 'tp_draft_task_new';
+    const hasData = Object.entries(formData || {}).some(([k, v]) => !k.startsWith('_') && v && String(v).trim().length > 0);
+    if (hasData) {
+      localStorage.setItem(key, JSON.stringify({ ...formData, _savedAt: Date.now() }));
+    }
+  } catch {}
+}
+
+function clearTaskDraft(taskId) {
+  try {
+    const key = taskId ? `tp_draft_task_${taskId}` : 'tp_draft_task_new';
+    localStorage.removeItem(key);
+  } catch {}
+}
 
 class Store {
   constructor() {
@@ -238,12 +263,30 @@ class Store {
 
   // ---------- UI Actions ----------
   openModal(type, editingOrData = null, error = null) {
-    this._state.ui.modal = { type, editing: editingOrData, error };
+    let resolvedData = editingOrData;
+    if (type === 'task') {
+      const isEdit = !!(editingOrData && editingOrData.id);
+      const draft = getTaskDraft(isEdit ? editingOrData.id : null);
+      if (draft) {
+        resolvedData = {
+          ...(editingOrData || {}),
+          title: draft.title !== undefined ? draft.title : (editingOrData?.title || ''),
+          description: draft.description !== undefined ? draft.description : (editingOrData?.description || ''),
+          assignee_id: draft.assigneeId !== undefined ? draft.assigneeId : (editingOrData?.assignee_id || ''),
+          priority: draft.priority !== undefined ? draft.priority : (editingOrData?.priority || 'normal'),
+          due_date: draft.dueDate !== undefined ? draft.dueDate : (editingOrData?.due_date || ''),
+          status: draft.status !== undefined ? draft.status : (editingOrData?.status || editingOrData?._initialStatus || 'open'),
+        };
+        if (isEdit) resolvedData.id = editingOrData.id;
+      }
+    }
+
+    this._state.ui.modal = { type, editing: resolvedData, error };
     this._notify('ui');
     try {
       sessionStorage.setItem('tp_modal_draft', JSON.stringify({
         type,
-        editing: editingOrData,
+        editing: resolvedData,
         formData: {},
         timestamp: Date.now(),
       }));
@@ -251,6 +294,29 @@ class Store {
   }
 
   closeModal() {
+    const currentModal = this._state.ui.modal;
+    if (currentModal) {
+      try {
+        let formData = {};
+        const modalBox = document.getElementById('activeModalBox');
+        if (modalBox) {
+          const form = modalBox.querySelector('form');
+          if (form) {
+            const data = new FormData(form);
+            for (const [k, v] of data.entries()) {
+              formData[k] = v;
+            }
+          }
+        }
+        sessionStorage.setItem('tp_last_closed_dialog', JSON.stringify({
+          type: currentModal.type,
+          editing: currentModal.editing,
+          formData,
+          closedAt: Date.now(),
+        }));
+      } catch {}
+    }
+
     this._state.ui.modal = null;
     this._notify('ui');
     try {

@@ -1139,6 +1139,12 @@ function saveActiveModalDraft() {
       timestamp: Date.now(),
     }));
   } catch {}
+
+  // If task modal, also persist task draft to localStorage
+  if (modal.type === 'task') {
+    const taskId = modal.editing?.id || null;
+    saveTaskDraft(taskId, formData);
+  }
 }
 
 const handleHistorySearchDebounced = debounce((value) => {
@@ -1239,6 +1245,9 @@ document.addEventListener('submit', async (e) => {
 
       const rollback = S_STORE.optimisticUpdateTask(editing.id, patch);
 
+      clearTaskDraft(editing.id);
+      try { sessionStorage.removeItem('tp_last_closed_dialog'); } catch {}
+
       S_STORE.closeModal();
       S_STORE.addToast({ type: 'success', title: 'Task Saved', message: `"${payload.title}" has been updated.` });
 
@@ -1267,6 +1276,10 @@ document.addEventListener('submit', async (e) => {
       };
 
       const rollback = S_STORE.optimisticAddTask(tempTask);
+
+      clearTaskDraft(null);
+      try { sessionStorage.removeItem('tp_last_closed_dialog'); } catch {}
+
       S_STORE.closeModal();
       S_STORE.addToast({ type: 'success', title: 'Task Created', message: `"${payload.title}" added to board.` });
 
@@ -1541,6 +1554,68 @@ document.addEventListener('click', async (e) => {
       S_STORE.addToast({ type: 'error', title: 'Remove Failed', message: err.message });
     }
     return;
+  }
+});
+
+// Keyboard Shortcuts: Ctrl+Z / Cmd+Z to restore/undo closed dialogs & Escape
+document.addEventListener('keydown', (e) => {
+  const isZ = e.key === 'z' || e.key === 'Z' || e.keyCode === 90;
+  const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+
+  // Escape key closes open modal
+  if (e.key === 'Escape') {
+    if (S_STORE.getState().ui.modal) {
+      S_STORE.closeModal();
+    }
+    return;
+  }
+
+  // Ctrl+Z / Cmd+Z (without Shift) undoes closed dialog if no modal is active
+  if (isCmdOrCtrl && isZ && !e.shiftKey) {
+    const isModalOpen = !!S_STORE.getState().ui.modal;
+    const activeEl = document.activeElement;
+    const isInsideInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+
+    // If modal is closed and user isn't actively editing a text input on the page, restore last closed dialog
+    if (!isModalOpen && !isInsideInput) {
+      let lastClosed = null;
+      try {
+        const raw = sessionStorage.getItem('tp_last_closed_dialog');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Date.now() - (parsed.closedAt || 0) < 900000) { // within 15 minutes
+            lastClosed = parsed;
+          }
+        }
+      } catch {}
+
+      if (lastClosed) {
+        e.preventDefault();
+        try { sessionStorage.removeItem('tp_last_closed_dialog'); } catch {}
+
+        let restoredEditing = lastClosed.editing;
+        if (lastClosed.type === 'task' && lastClosed.formData) {
+          const fd = lastClosed.formData;
+          restoredEditing = {
+            ...(lastClosed.editing || {}),
+            title: fd.title !== undefined ? fd.title : (lastClosed.editing?.title || ''),
+            description: fd.description !== undefined ? fd.description : (lastClosed.editing?.description || ''),
+            assignee_id: fd.assigneeId !== undefined ? fd.assigneeId : (lastClosed.editing?.assignee_id || ''),
+            priority: fd.priority !== undefined ? fd.priority : (lastClosed.editing?.priority || 'normal'),
+            due_date: fd.dueDate !== undefined ? fd.dueDate : (lastClosed.editing?.due_date || ''),
+            status: fd.status !== undefined ? fd.status : (lastClosed.editing?.status || lastClosed.editing?._initialStatus || 'open'),
+          };
+          if (lastClosed.editing?.id) restoredEditing.id = lastClosed.editing.id;
+        }
+
+        S_STORE.openModal(lastClosed.type, restoredEditing);
+        S_STORE.addToast({
+          type: 'info',
+          title: 'Dialog Restored',
+          message: 'Undid dialog close — your draft is reopened.',
+        });
+      }
+    }
   }
 });
 
