@@ -375,13 +375,8 @@ function renderTaskModalForm(editing, isSubmitting, error) {
     </div>
 
     <div class="field">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
-        <label for="taskDescInput" style="margin-bottom:0">Description & Deliverable Context</label>
-        <button type="button" class="btn-ai-polish" id="btnRepolishDesc" data-action="repolish-desc" title="Rephrase and expand draft into professional documentation tone">
-          ${Icons.sparkles} <span>✨ Rephrase & Repolish</span>
-        </button>
-      </div>
-      <textarea id="taskDescInput" name="description" placeholder="Describe task in detail or write draft notes, then click '✨ Rephrase & Repolish' to expand into professional documentation tone...">${esc(currentDesc)}</textarea>
+      <label for="taskDescInput">Description & Deliverable Context</label>
+      <textarea id="taskDescInput" name="description" placeholder="Describe task in detail so after completion a professional summary of your work can be generated with your name and deliverables...">${esc(currentDesc)}</textarea>
       <div class="field-hint">Detail provided here is automatically synthesized in your Kognoz PDF Executive Work Report.</div>
     </div>
 
@@ -1383,73 +1378,6 @@ document.addEventListener('click', async (e) => {
   if (action === 'edit-task') {
     const task = S_STORE.getState().server.tasks.find(t => t.id === btn.dataset.id);
     if (task) S_STORE.openModal('task', task);
-    return;
-  }
-
-  if (action === 'repolish-desc') {
-    const descEl = document.getElementById('taskDescInput');
-    const titleEl = document.getElementById('taskTitleInput');
-    const priorityEl = document.getElementById('taskPrioritySelect');
-
-    const rawTitle = titleEl ? titleEl.value.trim() : '';
-    const rawDesc = descEl ? descEl.value.trim() : '';
-    const priority = priorityEl ? priorityEl.value : 'normal';
-
-    if (!rawTitle && !rawDesc) {
-      S_STORE.addToast({
-        type: 'warning',
-        title: 'Title or Notes Needed',
-        message: 'Please provide a task title or draft notes in the description first.',
-      });
-      if (titleEl) titleEl.focus();
-      return;
-    }
-
-    const origBtnHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.classList.add('btn-loading');
-    btn.innerHTML = `${Icons.sparkles} <span>Expanding & Polishing...</span>`;
-
-    try {
-      const res = await api('/api/repolish-description', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: rawTitle,
-          description: rawDesc,
-          priority: priority,
-        }),
-      });
-
-      if (res && res.success && res.polishedDescription) {
-        if (descEl) {
-          descEl.value = res.polishedDescription;
-          descEl.focus();
-          descEl.classList.add('field-pulse-highlight');
-          saveActiveModalDraft();
-          setTimeout(() => {
-            descEl.classList.remove('field-pulse-highlight');
-          }, 1600);
-        }
-        S_STORE.addToast({
-          type: 'success',
-          title: 'Description Repolished',
-          message: 'Expanded into professional documentation tone!',
-        });
-      } else {
-        throw new Error(res?.error || 'Failed to repolish description');
-      }
-    } catch (err) {
-      console.warn('Repolish error:', err);
-      S_STORE.addToast({
-        type: 'error',
-        title: 'Polish Failed',
-        message: err.message || 'Could not connect to polish engine. Please try again.',
-      });
-    } finally {
-      btn.disabled = false;
-      btn.classList.remove('btn-loading');
-      btn.innerHTML = origBtnHtml;
-    }
     return;
   }
 
