@@ -20,6 +20,26 @@ const Icons = {
   rotateCcw: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`,
   clock: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
   emptyTask: `<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>`,
+  fileText: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
+  download: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+  sparkles: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`,
+  kognozLogo: (width = 135, height = 36) => `
+    <svg width="${width}" height="${height}" viewBox="0 0 160 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="24" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-weight="900" font-size="23" fill="#00385c" letter-spacing="1">KOGN</text>
+      <g transform="translate(71, 6)">
+        <circle cx="9.5" cy="9.5" r="9" stroke="#00385c" stroke-width="2.8" fill="none"/>
+        <path d="M5.5 13.5C7.5 8 12.5 6 14.5 10.5" stroke="#0ea5e9" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M7.5 15.5C11.5 15.5 15.5 10.5 12.5 5.5" stroke="#10b981" stroke-width="1.8" stroke-linecap="round"/>
+      </g>
+      <text x="94" y="24" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-weight="900" font-size="23" fill="#00385c" letter-spacing="1">Z</text>
+      <text x="0" y="37" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-weight="600" font-style="italic" font-size="10" fill="#0077b6">Maximising Human Potential</text>
+    </svg>`,
+  kognozMotif: (size = 180) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="130" cy="70" r="65" fill="#06b6d4" fill-opacity="0.4" />
+      <circle cx="90" cy="115" r="70" fill="#0d9488" fill-opacity="0.45" />
+      <circle cx="150" cy="130" r="60" fill="#2563eb" fill-opacity="0.35" />
+    </svg>`,
 };
 
 // ============================================================================
@@ -56,6 +76,9 @@ function renderHeader() {
     </nav>
 
     <div class="topbar-right">
+      <button class="btn btn-secondary btn-sm" data-action="open-report" title="Export PDF Executive Report">
+        ${Icons.fileText} Export Report
+      </button>
       <div class="user-profile-badge">
         <span class="avatar">${userInitials(user.name)}</span>
         <span>${esc(user.name)}</span>
@@ -383,6 +406,10 @@ function renderHistoryView() {
           ${(history.search || history.assignee !== 'all' || history.timeframe !== 'all') ? `
             <button class="btn-clear-filters" data-action="reset-history-filters">✕ Reset</button>
           ` : ''}
+
+          <button class="btn btn-primary btn-sm" data-action="open-report" title="Export PDF Executive Report">
+            ${Icons.fileText} Export PDF Report
+          </button>
         </div>
       </div>` : ''}
     </div>
@@ -589,11 +616,13 @@ function renderModal() {
     modalBody = renderEmailModalForm(isSubmitting, error);
   } else if (type === 'login') {
     modalBody = renderLoginModalForm(isSubmitting, error);
+  } else if (type === 'report') {
+    modalBody = renderExportReportModal(editing, isSubmitting, error);
   }
 
   return `
   <div class="modal-backdrop" id="activeModalBackdrop" role="dialog" aria-modal="true">
-    <div class="modal-box" id="activeModalBox">
+    <div class="modal-box ${type === 'report' ? 'modal-box-wide' : ''}" id="activeModalBox">
       ${modalBody}
     </div>
   </div>`;
@@ -621,8 +650,9 @@ function renderTaskModalForm(editing, isSubmitting, error) {
     </div>
 
     <div class="field">
-      <label for="taskDescInput">Description</label>
-      <textarea id="taskDescInput" name="description" placeholder="Add context, acceptance criteria, or links...">${esc(editing?.description || '')}</textarea>
+      <label for="taskDescInput">Description & Deliverable Context</label>
+      <textarea id="taskDescInput" name="description" placeholder="Describe task in detail so after completion a professional summary of your work can be generated with your name and deliverables...">${esc(editing?.description || '')}</textarea>
+      <div class="field-hint">Detail provided here is automatically synthesized in your Kognoz PDF Executive Work Report.</div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -839,6 +869,473 @@ function renderLoginModalForm(isSubmitting, error) {
     <span>Sign in with Microsoft</span>
   </a>`;
 }
+
+// 8b. Kognoz Executive Report Modal & Printing Engine
+let reportOptionsState = {
+  assigneeId: 'all',
+  timeframe: 'all',
+  includeOpen: false,
+  aiSummary: null,
+  aiOutcomes: null,
+  isGeneratingAi: false,
+};
+
+function renderExportReportModal(options = {}, isSubmitting = false, error = null) {
+  const state = S_STORE.getState();
+  const users = state.server.users;
+  const tasks = state.server.tasks;
+
+  const currentOpts = {
+    assigneeId: reportOptionsState.assigneeId,
+    timeframe: reportOptionsState.timeframe,
+    includeOpen: reportOptionsState.includeOpen,
+  };
+
+  const reportData = generateKognozReportData(tasks, currentOpts, users);
+  const aiSummary = reportOptionsState.aiSummary;
+  const aiOutcomes = reportOptionsState.aiOutcomes;
+  const isGeneratingAi = reportOptionsState.isGeneratingAi;
+
+  return `
+  <div class="modal-head">
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="color:var(--primary)">${Icons.fileText}</span>
+        <h2 class="modal-title" style="font-size:18px">Export Executive Report (PDF)</h2>
+      </div>
+      <p class="modal-desc">Generate client-ready Kognoz branded executive report with completion timestamps and summaries</p>
+    </div>
+    <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+  </div>
+
+  ${error ? `<div class="err-banner">${error}</div>` : ''}
+
+  <div class="report-config-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+    <div class="field" style="margin-bottom:0">
+      <label>Assignee / Scope</label>
+      <select id="reportAssigneeSelect" data-action="change-report-opt" data-opt="assigneeId">
+        <option value="all" ${currentOpts.assigneeId === 'all' ? 'selected' : ''}>Whole Team (All Members)</option>
+        ${users.map(u => `<option value="${u.id}" ${currentOpts.assigneeId === u.id ? 'selected' : ''}>${esc(u.name)} (${esc(u.email || u.username)})</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="field" style="margin-bottom:0">
+      <label>Timeframe</label>
+      <select id="reportTimeframeSelect" data-action="change-report-opt" data-opt="timeframe">
+        <option value="all" ${currentOpts.timeframe === 'all' ? 'selected' : ''}>All Completed Time</option>
+        <option value="today" ${currentOpts.timeframe === 'today' ? 'selected' : ''}>Completed Today</option>
+        <option value="week" ${currentOpts.timeframe === 'week' ? 'selected' : ''}>Past 7 Days</option>
+        <option value="month" ${currentOpts.timeframe === 'month' ? 'selected' : ''}>Past 30 Days</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- AI Executive Synthesis Card -->
+  <div class="report-ai-card" style="background:linear-gradient(135deg, rgba(238,242,255,0.9) 0%, rgba(240,253,250,0.9) 100%);border:1px solid rgba(199,210,254,0.8);border-radius:var(--radius-md);padding:14px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#1e40af">
+        <span>${Icons.sparkles}</span>
+        <span>Executive Narrative Synthesis (Gemini AI)</span>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm ${isGeneratingAi ? 'btn-loading' : ''}" data-action="generate-ai-summary" ${isGeneratingAi ? 'disabled' : ''} style="font-size:11.5px;padding:4px 10px;background:#ffffff">
+        ${isGeneratingAi ? 'Synthesizing...' : '⚡ Generate / Refresh AI Summary'}
+      </button>
+    </div>
+    <div style="font-size:12px;color:#334155;line-height:1.5">
+      ${aiSummary ? `<p style="font-weight:600;margin-bottom:6px">${esc(aiSummary)}</p>` : `<p style="color:#64748b;font-style:italic">Click above to synthesize an AI-generated executive overview of deliverables using Gemini AI or structured intelligence.</p>`}
+      ${aiOutcomes && aiOutcomes.length ? `<ul style="padding-left:16px;margin-top:6px">${aiOutcomes.map(o => `<li>${esc(o)}</li>`).join('')}</ul>` : ''}
+    </div>
+  </div>
+
+  <!-- Report Deliverables Summary Preview -->
+  <div class="report-preview-box" style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface);padding:14px;max-height:200px;overflow-y:auto;margin-bottom:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border-subtle)">
+      <span style="font-size:12.5px;font-weight:800;color:var(--ink)">Deliverables to Include (${reportData.totalTasks})</span>
+      <span style="font-size:11px;font-weight:700;color:var(--status-done)">${reportData.onTimeRate}% On-Time</span>
+    </div>
+    ${reportData.tasks.length === 0 ? `
+      <div style="text-align:center;padding:24px 10px;color:var(--ink-muted);font-size:13px">
+        No completed deliverables found for ${esc(reportData.assigneeName)} in this timeframe.
+      </div>
+    ` : `
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${reportData.tasks.map((t, idx) => {
+          const comp = t.completed_at ? formatCompletedAt(t.completed_at) : null;
+          return `
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:6px 8px;background:rgba(248,250,252,0.8);border:1px solid var(--border-subtle);border-radius:var(--radius-xs)">
+            <div style="display:flex;align-items:center;gap:6px;overflow:hidden">
+              <span style="font-family:var(--font-mono);font-weight:700;color:var(--ink-muted);font-size:10.5px">#${idx+1}</span>
+              <strong style="color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px">${esc(t.title)}</strong>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <span class="badge ${t.priority === 'high' ? 'badge-high' : 'badge-normal'}" style="font-size:10px;padding:1px 5px">${t.priority || 'normal'}</span>
+              ${comp ? `<span class="badge badge-done" style="font-size:10px;padding:1px 5px">${comp.short}</span>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `}
+  </div>
+
+  <div class="modal-actions" style="margin-top:0">
+    <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+    <button type="button" class="btn btn-primary" data-action="print-report" ${reportData.tasks.length === 0 ? 'disabled' : ''} style="gap:6px">
+      ${Icons.download} Export & Print Kognoz PDF
+    </button>
+  </div>`;
+}
+
+function printKognozReport(reportData, aiSummary, aiOutcomes) {
+  const tasks = reportData.tasks || [];
+  const totalDeliverableSlides = tasks.length;
+  const totalPages = 1 + totalDeliverableSlides + (aiSummary ? 1 : 0);
+
+  // Generate printable HTML slides
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Please allow pop-ups in your browser to download and print the Kognoz Executive PDF report.');
+    return;
+  }
+
+  const logoSvg = Icons.kognozLogo(170, 44);
+  const motifSvg = Icons.kognozMotif(240);
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kognoz Executive Report — ${esc(reportData.assigneeName)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,700;1,6..72,500;1,6..72,700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: #e2e8f0;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+      padding: 24px;
+    }
+    .print-bar {
+      max-width: 800px;
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      padding: 14px 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .btn-print {
+      background: #00385c;
+      color: #ffffff;
+      padding: 10px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-print:hover { background: #002238; }
+
+    /* Slide Deck Format (matching sample PDF) */
+    .slide-page {
+      max-width: 800px;
+      min-height: 980px;
+      margin: 0 auto 30px;
+      background: #f0f6fa;
+      border-radius: 16px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.1);
+      padding: 60px 54px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+      break-after: page;
+    }
+    .slide-cover {
+      background: #ffffff;
+    }
+    .slide-dark {
+      background: #00385c;
+      color: #ffffff;
+    }
+
+    /* Top Motif & Watermark */
+    .top-motif-wrap {
+      position: absolute;
+      top: -20px;
+      right: -20px;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .watermark-num {
+      position: absolute;
+      top: 40px;
+      left: 48px;
+      font-size: 140px;
+      font-weight: 900;
+      color: rgba(203, 213, 225, 0.45);
+      line-height: 1;
+      user-select: none;
+      pointer-events: none;
+      z-index: 0;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .slide-header {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .slide-tag {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #0d9488;
+    }
+    .slide-dark .slide-tag {
+      color: #38bdf8;
+    }
+
+    .slide-content {
+      position: relative;
+      z-index: 2;
+      margin: 40px 0;
+    }
+    .cover-title {
+      font-size: 46px;
+      font-weight: 900;
+      line-height: 1.15;
+      color: #00385c;
+      letter-spacing: -0.02em;
+      margin-bottom: 20px;
+      max-width: 600px;
+    }
+    .cover-title span { color: #0d9488; }
+    .cover-desc {
+      font-size: 17px;
+      color: #334155;
+      line-height: 1.6;
+      max-width: 580px;
+      margin-bottom: 28px;
+    }
+
+    .slide-headline {
+      font-size: 32px;
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1.25;
+      margin-bottom: 18px;
+      letter-spacing: -0.01em;
+    }
+    .slide-desc {
+      font-size: 16px;
+      color: #334155;
+      line-height: 1.65;
+      margin-bottom: 24px;
+    }
+    .slide-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(203, 213, 225, 0.6);
+      font-size: 13px;
+      color: #475569;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+    .badge-done { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+    .badge-high { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .badge-normal { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+
+    /* Footer */
+    .slide-footer {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding-top: 20px;
+    }
+    .footer-url {
+      font-size: 13px;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .slide-dark .footer-url {
+      color: #94a3b8;
+    }
+    .page-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: #64748b;
+    }
+    .slide-dark .page-num {
+      color: #94a3b8;
+    }
+
+    @media print {
+      body { background: transparent; padding: 0; }
+      .print-bar { display: none; }
+      .slide-page {
+        margin: 0;
+        box-shadow: none;
+        border-radius: 0;
+        min-height: 100vh;
+        page-break-after: always;
+        break-after: page;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar">
+    <div>
+      <strong style="font-size:15px;color:#00385c">Kognoz Executive Work Report</strong>
+      <div style="font-size:12px;color:#64748b">Report for ${esc(reportData.assigneeName)} • ${reportData.totalTasks} Deliverables</div>
+    </div>
+    <button class="btn-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  </div>
+
+  <!-- SLIDE 1: COVER PAGE -->
+  <div class="slide-page slide-cover">
+    <div class="top-motif-wrap">${motifSvg}</div>
+    <div class="slide-header">
+      <div class="slide-tag">EXECUTIVE WORK REPORT</div>
+    </div>
+    <div class="slide-content">
+      <h1 class="cover-title">Deliverables & <span>Velocity Digest</span></h1>
+      <p class="cover-desc">
+        Comprehensive executive record of completed deliverables, precision completion timestamps, and operational milestones achieved by <strong>${esc(reportData.assigneeName)}</strong>.
+      </p>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;max-width:540px;display:grid;grid-template-columns:repeat(3, 1fr);gap:14px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">Completed Tasks</div>
+          <div style="font-size:22px;font-weight:800;color:#00385c">${reportData.totalTasks}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">High Priority</div>
+          <div style="font-size:22px;font-weight:800;color:#ef4444">${reportData.highPriority}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">On-Time Rate</div>
+          <div style="font-size:22px;font-weight:800;color:#10b981">${reportData.onTimeRate}%</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-footer">
+      <div>${logoSvg}</div>
+      <div class="footer-url">kognozconsulting.com</div>
+    </div>
+  </div>
+
+  <!-- DELIVERABLE SLIDES (matching sample PDF Pages 2-5) -->
+  ${tasks.map((t, idx) => {
+    const slideNum = String(idx + 1).padStart(2, '0');
+    const compFormatted = t.completed_at ? formatFullDateTime(t.completed_at) : 'Completed';
+    const timeliness = getTimelinessInfo(t.due_date, t.completed_at);
+    const pageFraction = `${slideNum} / ${String(totalPages).padStart(2, '0')}`;
+
+    return `
+    <div class="slide-page">
+      <div class="watermark-num">${slideNum}</div>
+      <div class="slide-header">
+        <div class="slide-tag">DELIVERABLE SPOTLIGHT</div>
+      </div>
+      <div class="slide-content">
+        <h2 class="slide-headline">${esc(t.title)}</h2>
+        <p class="slide-desc">
+          ${t.description ? esc(t.description) : 'Deliverable successfully executed, validated, and integrated into operational workflow with zero friction.'}
+        </p>
+        <div class="slide-meta-row">
+          <span class="badge badge-done">✓ Done: ${esc(compFormatted)}</span>
+          <span class="badge ${t.priority === 'high' ? 'badge-high' : 'badge-normal'}">Priority: ${(t.priority || 'normal').toUpperCase()}</span>
+          ${timeliness.status !== 'none' ? `<span class="badge badge-done">Timeliness: ${timeliness.label}</span>` : ''}
+          ${t.due_date ? `<span>Target Due Date: <strong>${t.due_date}</strong></span>` : ''}
+          <span>Assignee: <strong>${esc(userName(t.assignee_id))}</strong></span>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <div>${logoSvg}</div>
+        <div class="page-num">${pageFraction}</div>
+      </div>
+    </div>`;
+  }).join('')}
+
+  <!-- EXECUTIVE SUMMARY SLIDE (matching sample PDF Page 6) -->
+  ${aiSummary ? `
+  <div class="slide-page slide-dark">
+    <div class="slide-header">
+      <div class="slide-tag">EXECUTIVE SYNTHESIS</div>
+    </div>
+    <div class="slide-content">
+      <h2 class="slide-headline" style="color:#ffffff;font-size:32px;margin-bottom:20px">Executive Summary & Operational Impact</h2>
+      <p style="font-size:17px;color:#e2e8f0;line-height:1.65;margin-bottom:24px">
+        ${esc(aiSummary)}
+      </p>
+      ${aiOutcomes && aiOutcomes.length ? `
+        <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px 24px;margin-top:20px">
+          <div style="font-size:13px;font-weight:800;color:#38bdf8;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px">Key Milestones & Outcomes</div>
+          <ul style="padding-left:18px;color:#f1f5f9;font-size:14.5px;line-height:1.7">
+            ${aiOutcomes.map(o => `<li>${esc(o)}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+    </div>
+    <div class="slide-footer">
+      <div>
+        <svg width="170" height="44" viewBox="0 0 160 42" fill="none">
+          <text x="0" y="24" font-family="'Plus Jakarta Sans', sans-serif" font-weight="900" font-size="23" fill="#ffffff" letter-spacing="1">KOGN</text>
+          <g transform="translate(71, 6)">
+            <circle cx="9.5" cy="9.5" r="9" stroke="#ffffff" stroke-width="2.8" fill="none"/>
+            <path d="M5.5 13.5C7.5 8 12.5 6 14.5 10.5" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M7.5 15.5C11.5 15.5 15.5 10.5 12.5 5.5" stroke="#34d399" stroke-width="1.8" stroke-linecap="round"/>
+          </g>
+          <text x="94" y="24" font-family="'Plus Jakarta Sans', sans-serif" font-weight="900" font-size="23" fill="#ffffff" letter-spacing="1">Z</text>
+          <text x="0" y="37" font-family="'Plus Jakarta Sans', sans-serif" font-weight="600" font-style="italic" font-size="10" fill="#38bdf8">Maximising Human Potential</text>
+        </svg>
+      </div>
+      <div class="footer-url">kognozconsulting.com</div>
+    </div>
+  </div>` : ''}
+
+  <script>
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        window.print();
+      }, 600);
+    });
+  </script>
+</body>
+</html>`;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
 
 // 9. Toast Container
 function renderToasts() {
@@ -1378,6 +1875,12 @@ document.addEventListener('change', (e) => {
   if (e.target.dataset && e.target.dataset.historyFilter) {
     S_STORE.setHistoryFilter(e.target.dataset.historyFilter, e.target.value);
   }
+  if (e.target.dataset && e.target.dataset.action === 'change-report-opt') {
+    reportOptionsState[e.target.dataset.opt] = e.target.value;
+    reportOptionsState.aiSummary = null;
+    reportOptionsState.aiOutcomes = null;
+    updateModalDom();
+  }
 });
 
 // Form Submissions
@@ -1658,6 +2161,59 @@ document.addEventListener('click', async (e) => {
     S_STORE.resetHistoryFilters();
     const input = document.getElementById('historySearchInput');
     if (input) input.value = '';
+    return;
+  }
+
+  if (action === 'open-report') {
+    S_STORE.openModal('report', {});
+    return;
+  }
+
+  if (action === 'generate-ai-summary') {
+    const state = S_STORE.getState();
+    const currentOpts = {
+      assigneeId: reportOptionsState.assigneeId,
+      timeframe: reportOptionsState.timeframe,
+      includeOpen: reportOptionsState.includeOpen,
+    };
+    const reportData = generateKognozReportData(state.server.tasks, currentOpts, state.server.users);
+
+    reportOptionsState.isGeneratingAi = true;
+    updateModalDom();
+
+    try {
+      const res = await api('/api/generate-summary', {
+        method: 'POST',
+        body: JSON.stringify({
+          tasks: reportData.tasks,
+          assigneeName: reportData.assigneeName,
+          timeframe: reportData.timeframe,
+        }),
+      });
+      if (res.success) {
+        reportOptionsState.aiSummary = res.summary;
+        reportOptionsState.aiOutcomes = res.keyOutcomes;
+      }
+    } catch (err) {
+      console.warn('AI summary error:', err);
+      // Fallback
+      reportOptionsState.aiSummary = `${reportData.assigneeName} delivered ${reportData.totalTasks} completed items with ${reportData.onTimeRate}% on-time turnaround.`;
+    } finally {
+      reportOptionsState.isGeneratingAi = false;
+      updateModalDom();
+    }
+    return;
+  }
+
+  if (action === 'print-report') {
+    const state = S_STORE.getState();
+    const currentOpts = {
+      assigneeId: reportOptionsState.assigneeId,
+      timeframe: reportOptionsState.timeframe,
+      includeOpen: reportOptionsState.includeOpen,
+    };
+    const reportData = generateKognozReportData(state.server.tasks, currentOpts, state.server.users);
+    printKognozReport(reportData, reportOptionsState.aiSummary, reportOptionsState.aiOutcomes);
     return;
   }
 

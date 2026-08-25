@@ -1335,6 +1335,9 @@ a {
   max-height: 90vh;
   overflow-y: auto;
 }
+.modal-box-wide {
+  max-width: 660px;
+}
 @keyframes modalSlideUp {
   from { transform: scale(0.96) translateY(12px); opacity: 0; }
   to { transform: scale(1) translateY(0); opacity: 1; }

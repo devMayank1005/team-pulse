@@ -686,3 +686,89 @@ function groupCompletedTasks(tasks, historyFilter = {}, users = []) {
     }
   };
 }
+
+// ============================================================================
+// KOGNOZ EXECUTIVE WORK REPORT & EXPORT GENERATOR
+// ============================================================================
+
+function generateKognozReportData(tasks, options = {}, users = []) {
+  const {
+    assigneeId = 'all',
+    timeframe = 'all', // 'today', 'week', 'month', 'all'
+    includeOpen = false,
+  } = options;
+
+  const userMap = new Map(users.map(u => [u.id, u.name]));
+  const assigneeName = assigneeId === 'all'
+    ? 'Whole Team'
+    : (userMap.get(assigneeId) || 'Team Member');
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // Filter tasks
+  const filteredTasks = tasks.filter(t => {
+    if (!includeOpen && t.status !== 'done') return false;
+
+    // Assignee check
+    if (assigneeId !== 'all') {
+      if (assigneeId === 'unassigned' && t.assignee_id) return false;
+      if (assigneeId !== 'unassigned' && t.assignee_id !== assigneeId) return false;
+    }
+
+    // Timeframe check
+    const compDate = t.completed_at ? new Date(t.completed_at) : new Date(t.updated_at || t.created_at || 0);
+    const compDateStr = compDate.toISOString().slice(0, 10);
+
+    if (timeframe === 'today') {
+      if (compDateStr !== todayStr) return false;
+    } else if (timeframe === 'week') {
+      if (compDate < sevenDaysAgo) return false;
+    } else if (timeframe === 'month') {
+      if (compDate < thirtyDaysAgo) return false;
+    }
+
+    return true;
+  });
+
+  // Sort by completion date descending
+  filteredTasks.sort((a, b) => {
+    const aTime = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+    const bTime = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  // Compute metrics
+  const totalTasks = filteredTasks.length;
+  const highPriority = filteredTasks.filter(t => t.priority === 'high').length;
+  let onTimeCount = 0;
+  let withDueDate = 0;
+
+  filteredTasks.forEach(t => {
+    if (t.due_date && t.completed_at) {
+      withDueDate++;
+      const compDateStr = new Date(t.completed_at).toISOString().slice(0, 10);
+      if (compDateStr <= t.due_date) onTimeCount++;
+    }
+  });
+
+  const onTimeRate = withDueDate > 0 ? Math.round((onTimeCount / withDueDate) * 100) : 100;
+
+  // Format generated date and time
+  const generatedAt = formatFullDateTime(now.toISOString());
+  const generatedDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  return {
+    assigneeName,
+    assigneeId,
+    timeframe,
+    generatedAt,
+    generatedDate,
+    totalTasks,
+    highPriority,
+    onTimeRate,
+    tasks: filteredTasks,
+  };
+}
