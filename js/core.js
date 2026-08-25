@@ -87,6 +87,7 @@ class Store {
         submitting: {}, // e.g. { task: true, login: true, ... }
         activeMobileCol: 'all', // 'all' | 'open' | 'in_progress' | 'done'
         activeView: 'board', // 'board' | 'history'
+        boardScope: (savedUser && savedUser.role === 'member') ? 'my' : 'team', // 'my' | 'team'
         realtimeStatus: 'connecting', // 'live' | 'connecting' | 'offline'
       },
       history: {
@@ -126,6 +127,9 @@ class Store {
   setAuth(token, user) {
     this._state.auth.token = token;
     this._state.auth.user = user;
+    if (user) {
+      this._state.ui.boardScope = (user.role === 'member') ? 'my' : 'team';
+    }
     if (token) localStorage.setItem('tp_token', token);
     else localStorage.removeItem('tp_token');
     if (user) localStorage.setItem('tp_user', JSON.stringify(user));
@@ -358,6 +362,13 @@ class Store {
         };
         if (isEdit) resolvedData.id = editingOrData.id;
       }
+
+      // Auto-assign to current logged-in member if creating new task in 'my' scope
+      if (!isEdit && this._state.ui.boardScope === 'my' && this._state.auth.user) {
+        if (!resolvedData || !resolvedData.assignee_id) {
+          resolvedData = { ...(resolvedData || {}), assignee_id: this._state.auth.user.id };
+        }
+      }
     }
 
     this._state.ui.modal = { type, editing: resolvedData, error };
@@ -415,6 +426,16 @@ class Store {
 
   setActiveMobileCol(col) {
     this._state.ui.activeMobileCol = col;
+    this._notify('ui');
+  }
+
+  setBoardScope(scope) {
+    if (this._state.ui.boardScope === scope && this._state.ui.activeView === 'board') return;
+    this._state.ui.boardScope = scope;
+    this._state.ui.activeView = 'board';
+    if (scope === 'my') {
+      this._state.filters.assignee = 'all';
+    }
     this._notify('ui');
   }
 
@@ -655,13 +676,28 @@ function computeMetrics(tasks) {
   return { total, inProgress, completed, overdue, dueToday };
 }
 
-function filterAndSortTasks(tasks, filters, users = []) {
+function getScopedTasks(state) {
+  const { server, ui, auth } = state;
+  const tasks = server.tasks || [];
+  if (ui.boardScope === 'my' && auth.user && auth.user.id) {
+    return tasks.filter(t => t.assignee_id === auth.user.id);
+  }
+  return tasks;
+}
+
+function filterAndSortTasks(tasks, filters, users = [], scope = 'team', currentUser = null) {
   const query = (filters.search || '').toLowerCase().trim();
   const today = todayStr();
 
+  // If in 'my' scope, filter by current logged-in member
+  let scoped = tasks;
+  if (scope === 'my' && currentUser && currentUser.id) {
+    scoped = tasks.filter(t => t.assignee_id === currentUser.id);
+  }
+
   const userMap = new Map(users.map(u => [u.id, (u.name || '').toLowerCase()]));
 
-  const filtered = tasks.filter(t => {
+  const filtered = scoped.filter(t => {
     // Assignee filter
     if (filters.assignee && filters.assignee !== 'all') {
       if (filters.assignee === 'unassigned') {

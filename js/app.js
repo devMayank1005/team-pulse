@@ -14,6 +14,13 @@ function renderHeader() {
   const isAdmin = user.role === 'admin';
   const canSendMail = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'].includes((user.email || '').toLowerCase());
   const activeView = state.ui.activeView || 'board';
+  const boardScope = state.ui.boardScope || 'team';
+  const isMyTasks = activeView === 'board' && boardScope === 'my';
+  const isTeamBoard = activeView === 'board' && boardScope === 'team';
+  const isHistory = activeView === 'history';
+
+  const myTasksCount = user ? state.server.tasks.filter(t => t.assignee_id === user.id && t.status !== 'done').length : 0;
+  const teamActiveCount = state.server.tasks.filter(t => t.status !== 'done').length;
   const completedCount = state.server.tasks.filter(t => t.status === 'done').length;
 
   return `
@@ -23,12 +30,17 @@ function renderHeader() {
       <span class="brand-title">Team Pulse</span>
     </div>
 
-    <!-- Center Navigation Tabs -->
+    <!-- Center Navigation Tabs: My Tasks | Team Board | Past History -->
     <nav class="view-nav-switcher" aria-label="Main Navigation">
-      <button class="nav-tab ${activeView === 'board' ? 'active' : ''}" data-action="set-view" data-view="board">
-        ${Icons.board} <span>Board</span>
+      <button class="nav-tab ${isMyTasks ? 'active' : ''}" data-action="set-board-scope" data-scope="my" title="View your assigned tasks">
+        ${Icons.user} <span>My Tasks</span>
+        ${myTasksCount > 0 ? `<span class="nav-badge" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe">${myTasksCount}</span>` : ''}
       </button>
-      <button class="nav-tab ${activeView === 'history' ? 'active' : ''}" data-action="set-view" data-view="history">
+      <button class="nav-tab ${isTeamBoard ? 'active' : ''}" data-action="set-board-scope" data-scope="team" title="View entire team deliverables">
+        ${Icons.team} <span>${isAdmin ? 'Team Board' : 'Team Overview'}</span>
+        ${teamActiveCount > 0 ? `<span class="nav-badge" style="background:#f8fafc;color:#475569;border-color:#e2e8f0">${teamActiveCount}</span>` : ''}
+      </button>
+      <button class="nav-tab ${isHistory ? 'active' : ''}" data-action="set-view" data-view="history" title="View completed deliverables and history">
         ${Icons.history} <span>Past History</span>
         ${completedCount > 0 ? `<span class="nav-badge">${completedCount}</span>` : ''}
       </button>
@@ -57,15 +69,18 @@ function renderHeader() {
 // 2. Executive Summary Metrics
 function renderSummaryMetrics() {
   const state = S_STORE.getState();
-  const tasks = state.server.tasks;
-  const metrics = computeMetrics(tasks);
+  const isMyTasks = state.ui.boardScope === 'my';
+  const scopedTasks = isMyTasks && state.auth.user
+    ? state.server.tasks.filter(t => t.assignee_id === state.auth.user.id)
+    : state.server.tasks;
+  const metrics = computeMetrics(scopedTasks);
 
   return `
   <div class="summary-grid">
     <div class="summary-card">
       <div class="summary-label">
         <span class="summary-dot" style="background:#64748b"></span>
-        <span>Total Tasks</span>
+        <span>${isMyTasks ? 'My Deliverables' : 'Total Deliverables'}</span>
       </div>
       <div class="summary-value">${metrics.total}</div>
     </div>
@@ -96,74 +111,121 @@ function renderSummaryMetrics() {
 // 3. Toolbar (Search, Filters, Sort, Actions)
 function renderToolbar() {
   const state = S_STORE.getState();
-  const { filters, server } = state;
+  const { filters, server, ui, auth } = state;
   const users = server.users;
+  const isMyTasks = ui.boardScope === 'my';
+  const user = auth.user;
 
-  const hasActiveFilters = filters.search || filters.assignee !== 'all' || filters.status !== 'all' || filters.priority !== 'all' || filters.dueDate !== 'all';
+  const hasActiveFilters = filters.search || (filters.assignee !== 'all' && !isMyTasks) || filters.status !== 'all' || filters.priority !== 'all' || filters.dueDate !== 'all';
+
+  // Compute counts for Member Quick Filter Pills in Team Board
+  let memberPillsHtml = '';
+  if (!isMyTasks) {
+    const allCount = server.tasks.filter(t => t.status !== 'done').length;
+    const unassignedCount = server.tasks.filter(t => !t.assignee_id && t.status !== 'done').length;
+
+    memberPillsHtml = `
+    <div class="member-filter-bar" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(226,232,240,0.6)">
+      <span style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-muted);margin-right:4px">
+        Quick Filter:
+      </span>
+      <button type="button" class="member-filter-chip ${filters.assignee === 'all' ? 'active' : ''}" data-action="set-assignee-filter" data-assignee="all">
+        <span>👥 All Team</span>
+        <span class="member-filter-count">${allCount}</span>
+      </button>
+      ${users.map(u => {
+        const uCount = server.tasks.filter(t => t.assignee_id === u.id && t.status !== 'done').length;
+        const isCurrent = filters.assignee === u.id;
+        return `
+        <button type="button" class="member-filter-chip ${isCurrent ? 'active' : ''}" data-action="set-assignee-filter" data-assignee="${esc(u.id)}" title="Filter by ${esc(u.name)}">
+          <span class="member-filter-avatar">${userInitials(u.name)}</span>
+          <span>${esc(u.name)}</span>
+          <span class="member-filter-count">${uCount}</span>
+        </button>`;
+      }).join('')}
+      <button type="button" class="member-filter-chip ${filters.assignee === 'unassigned' ? 'active' : ''}" data-action="set-assignee-filter" data-assignee="unassigned">
+        <span>⚪ Unassigned</span>
+        <span class="member-filter-count">${unassignedCount}</span>
+      </button>
+    </div>`;
+  }
 
   return `
-  <div class="toolbar-card">
-    <div class="toolbar-left">
-      <!-- Search Input -->
-      <div class="search-box">
-        <span class="search-icon">${Icons.search}</span>
-        <input
-          type="text"
-          id="taskSearchInput"
-          class="search-input"
-          placeholder="Search title, description, assignee..."
-          value="${esc(filters.search)}"
-          autocomplete="off"
-        />
-        ${filters.search ? `<span class="search-clear" data-action="clear-search" title="Clear search">✕</span>` : ''}
+  <div class="toolbar-card" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div class="toolbar-left" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1">
+        <!-- Search Input -->
+        <div class="search-box">
+          <span class="search-icon">${Icons.search}</span>
+          <input
+            type="text"
+            id="taskSearchInput"
+            class="search-input"
+            placeholder="Search deliverables, descriptions..."
+            value="${esc(filters.search)}"
+            autocomplete="off"
+          />
+          ${filters.search ? `<span class="search-clear" data-action="clear-search" title="Clear search">✕</span>` : ''}
+        </div>
+
+        ${isMyTasks && user ? `
+          <div class="scope-info-pill">
+            <span style="font-size:13px">🎯</span>
+            <span>Showing deliverables assigned to <strong>${esc(user.name)}</strong></span>
+          </div>
+        ` : ''}
+
+        <!-- Filters Dropdowns -->
+        <div class="filters-group">
+          ${!isMyTasks ? `
+          <select class="filter-select" data-filter="assignee" title="Filter by Assignee">
+            <option value="all">Assignee: Everyone</option>
+            <option value="unassigned" ${filters.assignee === 'unassigned' ? 'selected' : ''}>Unassigned</option>
+            ${users.map(u => `<option value="${u.id}" ${filters.assignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+          </select>` : ''}
+
+          <select class="filter-select" data-filter="status" title="Filter by Status">
+            <option value="all">Status: All</option>
+            <option value="open" ${filters.status === 'open' ? 'selected' : ''}>Open</option>
+            <option value="in_progress" ${filters.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+            <option value="done" ${filters.status === 'done' ? 'selected' : ''}>Done</option>
+          </select>
+
+          <select class="filter-select" data-filter="priority" title="Filter by Priority">
+            <option value="all">Priority: All</option>
+            <option value="high" ${filters.priority === 'high' ? 'selected' : ''}>High</option>
+            <option value="normal" ${filters.priority === 'normal' ? 'selected' : ''}>Normal</option>
+            <option value="low" ${filters.priority === 'low' ? 'selected' : ''}>Low</option>
+          </select>
+
+          <select class="filter-select" data-filter="dueDate" title="Filter by Due Date">
+            <option value="all">Due Date: All</option>
+            <option value="overdue" ${filters.dueDate === 'overdue' ? 'selected' : ''}>Overdue</option>
+            <option value="today" ${filters.dueDate === 'today' ? 'selected' : ''}>Due Today</option>
+            <option value="upcoming" ${filters.dueDate === 'upcoming' ? 'selected' : ''}>Upcoming</option>
+            <option value="none" ${filters.dueDate === 'none' ? 'selected' : ''}>No Due Date</option>
+          </select>
+
+          <select class="filter-select" data-filter="sort" title="Sort Order">
+            <option value="due_date_asc" ${filters.sort === 'due_date_asc' ? 'selected' : ''}>Sort: Due Date (Earliest)</option>
+            <option value="due_date_desc" ${filters.sort === 'due_date_desc' ? 'selected' : ''}>Sort: Due Date (Latest)</option>
+            <option value="priority_desc" ${filters.sort === 'priority_desc' ? 'selected' : ''}>Sort: Priority (Highest)</option>
+            <option value="created_desc" ${filters.sort === 'created_desc' ? 'selected' : ''}>Sort: Recently Created</option>
+            <option value="completed_desc" ${filters.sort === 'completed_desc' ? 'selected' : ''}>Sort: Recently Completed</option>
+          </select>
+
+          ${hasActiveFilters ? `<button class="btn-clear-filters" data-action="reset-filters">✕ Reset</button>` : ''}
+        </div>
       </div>
 
-      <!-- Filters Dropdowns -->
-      <div class="filters-group">
-        <select class="filter-select" data-filter="assignee" title="Filter by Assignee">
-          <option value="all">Assignee: Everyone</option>
-          <option value="unassigned" ${filters.assignee === 'unassigned' ? 'selected' : ''}>Unassigned</option>
-          ${users.map(u => `<option value="${u.id}" ${filters.assignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
-        </select>
-
-        <select class="filter-select" data-filter="status" title="Filter by Status">
-          <option value="all">Status: All</option>
-          <option value="open" ${filters.status === 'open' ? 'selected' : ''}>Open</option>
-          <option value="in_progress" ${filters.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
-          <option value="done" ${filters.status === 'done' ? 'selected' : ''}>Done</option>
-        </select>
-
-        <select class="filter-select" data-filter="priority" title="Filter by Priority">
-          <option value="all">Priority: All</option>
-          <option value="high" ${filters.priority === 'high' ? 'selected' : ''}>High</option>
-          <option value="normal" ${filters.priority === 'normal' ? 'selected' : ''}>Normal</option>
-          <option value="low" ${filters.priority === 'low' ? 'selected' : ''}>Low</option>
-        </select>
-
-        <select class="filter-select" data-filter="dueDate" title="Filter by Due Date">
-          <option value="all">Due Date: All</option>
-          <option value="overdue" ${filters.dueDate === 'overdue' ? 'selected' : ''}>Overdue</option>
-          <option value="today" ${filters.dueDate === 'today' ? 'selected' : ''}>Due Today</option>
-          <option value="upcoming" ${filters.dueDate === 'upcoming' ? 'selected' : ''}>Upcoming</option>
-          <option value="none" ${filters.dueDate === 'none' ? 'selected' : ''}>No Due Date</option>
-        </select>
-
-        <select class="filter-select" data-filter="sort" title="Sort Order">
-          <option value="due_date_asc" ${filters.sort === 'due_date_asc' ? 'selected' : ''}>Sort: Due Date (Earliest)</option>
-          <option value="due_date_desc" ${filters.sort === 'due_date_desc' ? 'selected' : ''}>Sort: Due Date (Latest)</option>
-          <option value="priority_desc" ${filters.sort === 'priority_desc' ? 'selected' : ''}>Sort: Priority (Highest)</option>
-          <option value="created_desc" ${filters.sort === 'created_desc' ? 'selected' : ''}>Sort: Recently Created</option>
-          <option value="completed_desc" ${filters.sort === 'completed_desc' ? 'selected' : ''}>Sort: Recently Completed</option>
-        </select>
-
-        ${hasActiveFilters ? `<button class="btn-clear-filters" data-action="reset-filters">✕ Reset</button>` : ''}
+      <!-- Actions Right -->
+      <div class="toolbar-right">
+        <button class="btn btn-primary" data-action="new-task">${Icons.plus} Add Task</button>
       </div>
     </div>
 
-    <!-- Actions Right -->
-    <div class="toolbar-right">
-      <button class="btn btn-primary" data-action="new-task">${Icons.plus} Add Task</button>
-    </div>
+    <!-- Quick Member Filter Pills for Team Board -->
+    ${memberPillsHtml}
   </div>`;
 }
 
@@ -171,7 +233,7 @@ function renderToolbar() {
 function renderMobileTabs() {
   const state = S_STORE.getState();
   const activeCol = state.ui.activeMobileCol;
-  const tasks = filterAndSortTasks(state.server.tasks, state.filters, state.server.users);
+  const tasks = filterAndSortTasks(state.server.tasks, state.filters, state.server.users, state.ui.boardScope, state.auth.user);
 
   const openCount = tasks.filter(t => t.status === 'open').length;
   const progCount = tasks.filter(t => t.status === 'in_progress').length;
@@ -249,8 +311,8 @@ function renderTaskCard(task) {
 // 6. Kanban Board Renderer
 function renderBoard() {
   const state = S_STORE.getState();
-  const { filters, server, ui } = state;
-  const filteredTasks = filterAndSortTasks(server.tasks, filters, server.users);
+  const { filters, server, ui, auth } = state;
+  const filteredTasks = filterAndSortTasks(server.tasks, filters, server.users, ui.boardScope, auth.user);
   const activeCol = ui.activeMobileCol;
 
   const columns = [
@@ -282,7 +344,7 @@ function renderBoard() {
             : `<div class="empty-col-state">
                 ${Icons.emptyTask}
                 <div class="empty-text">No ${col.label.toLowerCase()} tasks</div>
-                <div class="empty-subtext">${filters.search || filters.assignee !== 'all' ? 'Try adjusting your filters' : 'Drag tasks here or add a new one'}</div>
+                <div class="empty-subtext">${filters.search || (filters.assignee !== 'all' && ui.boardScope !== 'my') ? 'Try adjusting your filters' : 'Drag tasks here or add a new one'}</div>
                </div>`
           }
         </div>
@@ -1648,6 +1710,18 @@ document.addEventListener('click', async (e) => {
 
   if (action === 'dismiss-toast') {
     S_STORE.removeToast(btn.dataset.id);
+    return;
+  }
+
+  if (action === 'set-board-scope') {
+    const scope = btn.dataset.scope || 'team';
+    S_STORE.setBoardScope(scope);
+    return;
+  }
+
+  if (action === 'set-assignee-filter') {
+    const assignee = btn.dataset.assignee || 'all';
+    S_STORE.setFilter('assignee', assignee);
     return;
   }
 
