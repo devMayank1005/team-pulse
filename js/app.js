@@ -551,39 +551,70 @@ function updateEmailAttachmentsDom() {
 }
 
 function renderEmailModalForm(isSubmitting, error, editing = null) {
+  const users = S_STORE.getState().server.users || [];
+  const quickUsers = users.filter(u => u.email && u.email.trim());
+
   return `
   <div class="modal-head">
     <div>
       <h2 class="modal-title">Send Email</h2>
-      <p class="modal-desc">Send messages and attachments directly via Microsoft Graph</p>
+      <p class="modal-desc">Send executive messages and attachments via Microsoft Graph</p>
     </div>
     <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
   </div>
 
-  ${error ? `<div class="err-banner">${error}</div>` : ''}
+  <div id="emailModalErrBanner">${error ? `<div class="err-banner">${error}</div>` : ''}</div>
 
   <form id="emailForm">
     <div class="field">
       <label>Send From</label>
-      <select name="sender">
+      <select name="sender" id="emailSenderSelect">
         <option value="mayank@kognozconsulting.com" ${editing?.sender === 'mayank@kognozconsulting.com' ? 'selected' : ''}>Mayank (mayank@kognozconsulting.com)</option>
         <option value="yashwanth.krishna@kognozconsulting.com" ${editing?.sender === 'yashwanth.krishna@kognozconsulting.com' ? 'selected' : ''}>Yashwanth (yashwanth.krishna@kognozconsulting.com)</option>
       </select>
     </div>
 
     <div class="field">
-      <label>Recipient Email *</label>
-      <input name="to" type="email" value="${esc(editing?.to || '')}" placeholder="recipient@domain.com" required />
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <label for="emailToInput" style="margin-bottom:0">Recipient Email *</label>
+        ${quickUsers.length ? `<span class="field-hint" style="margin-top:0">Type or select team member</span>` : ''}
+      </div>
+      <div style="position:relative">
+        <input 
+          id="emailToInput" 
+          name="to" 
+          type="email" 
+          value="${esc(editing?.to || '')}" 
+          placeholder="e.g. mayank@kognozconsulting.com" 
+          list="teamEmailSuggestions" 
+          autocomplete="off" 
+          required 
+        />
+        <datalist id="teamEmailSuggestions">
+          ${quickUsers.map(u => `<option value="${esc(u.email)}">${esc(u.name)} (${esc(u.email)})</option>`).join('')}
+        </datalist>
+      </div>
+
+      <!-- Quick Autocomplete Chips -->
+      ${quickUsers.length ? `
+        <div class="email-recipient-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          ${quickUsers.map(u => `
+            <button type="button" class="btn-recipient-chip" data-action="fill-email-recipient" data-email="${esc(u.email)}" title="Send to ${esc(u.name)}">
+              + ${esc(u.name.split(' ')[0])} <span style="opacity:0.65;font-weight:400">(${esc(u.email)})</span>
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
     </div>
 
     <div class="field">
       <label>Subject *</label>
-      <input name="subject" value="${esc(editing?.subject || '')}" placeholder="Team Pulse Task Digest" required />
+      <input id="emailSubjectInput" name="subject" value="${esc(editing?.subject || '')}" placeholder="Team Pulse Task Digest" required />
     </div>
 
     <div class="field">
       <label>Message Content *</label>
-      <textarea name="body" rows="4" placeholder="Write your message here..." required>${esc(editing?.body || '')}</textarea>
+      <textarea id="emailBodyInput" name="body" rows="4" placeholder="Write your message here..." required>${esc(editing?.body || '')}</textarea>
     </div>
 
     <div class="field">
@@ -600,10 +631,16 @@ function renderEmailModalForm(isSubmitting, error, editing = null) {
       <div class="field-hint">Attach documents, PDFs, or images (up to 4MB per file).</div>
     </div>
 
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
-      <button type="submit" class="btn btn-primary ${isSubmitting ? 'btn-loading' : ''}" ${isSubmitting ? 'disabled' : ''}>
-        ${isSubmitting ? 'Sending...' : 'Send Message'}
+    <!-- Live Status Progress Indicator -->
+    <div id="emailLiveStatus" class="email-live-status" style="display:none">
+      <div class="email-status-bar"><div class="email-status-fill"></div></div>
+      <div class="email-status-text" id="emailStatusText">Preparing transmission...</div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:18px">
+      <button type="button" class="btn btn-secondary" id="emailCancelBtn" data-action="close-modal">Cancel</button>
+      <button type="submit" id="emailSubmitBtn" class="btn btn-primary">
+        <span>Send Message</span>
       </button>
     </div>
   </form>`;
@@ -1406,15 +1443,22 @@ document.addEventListener('submit', async (e) => {
     return;
   }
 
-  // Email Form
+  // Email Form Submission
   if (e.target.id === 'emailForm') {
     e.preventDefault();
-    const fd = new FormData(e.target);
+    const form = e.target;
+    const submitBtn = document.getElementById('emailSubmitBtn');
+    const cancelBtn = document.getElementById('emailCancelBtn');
+    const statusBox = document.getElementById('emailLiveStatus');
+    const statusText = document.getElementById('emailStatusText');
+    const errBannerHost = document.getElementById('emailModalErrBanner');
+
+    const fd = new FormData(form);
     const body = {
       sender: fd.get('sender'),
-      to: fd.get('to'),
-      subject: fd.get('subject'),
-      body: fd.get('body'),
+      to: (fd.get('to') || '').trim(),
+      subject: (fd.get('subject') || '').trim(),
+      body: (fd.get('body') || '').trim(),
       attachments: emailAttachmentsState.map(a => ({
         name: a.name,
         contentType: a.contentType,
@@ -1422,16 +1466,70 @@ document.addEventListener('submit', async (e) => {
       })),
     };
 
-    S_STORE.setSubmitting('email', true);
+    if (!body.to || !body.subject || !body.body) {
+      if (errBannerHost) {
+        errBannerHost.innerHTML = `<div class="err-banner">Please specify recipient email, subject, and message content.</div>`;
+      }
+      return;
+    }
+
+    // In-place live visual progress
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.classList.add('btn-loading');
+      submitBtn.innerHTML = `<span>Sending...</span>`;
+    }
+    if (cancelBtn) cancelBtn.disabled = true;
+    if (statusBox && statusText) {
+      statusBox.style.display = 'flex';
+      statusBox.classList.remove('email-status-success');
+      statusText.innerHTML = `<span>Connecting to Microsoft Graph & preparing message...</span>`;
+    }
+    if (errBannerHost) errBannerHost.innerHTML = '';
+
     try {
+      if (body.attachments.length > 0 && statusText) {
+        statusText.innerHTML = `<span>Transmitting ${body.attachments.length} attachment${body.attachments.length > 1 ? 's' : ''} & message...</span>`;
+      }
+
       await api('/api/test-email', { method: 'POST', body: JSON.stringify(body) });
+
+      // Live Success Feedback
+      if (statusBox && statusText) {
+        statusBox.classList.add('email-status-success');
+        statusText.innerHTML = `<span>✓ Sent successfully! Delivered via Microsoft Graph.</span>`;
+      }
+      if (submitBtn) {
+        submitBtn.classList.remove('btn-loading');
+        submitBtn.style.background = '#16a34a';
+        submitBtn.style.borderColor = '#16a34a';
+        submitBtn.innerHTML = `<span>✓ Sent Successfully</span>`;
+      }
+
       emailAttachmentsState = [];
-      S_STORE.closeModal();
-      S_STORE.addToast({ type: 'success', title: 'Email Dispatched', message: `Sent to ${body.to}` });
+
+      setTimeout(() => {
+        S_STORE.closeModal();
+        S_STORE.addToast({
+          type: 'success',
+          title: 'Email Delivered',
+          message: `Sent to ${body.to} via Microsoft Graph.`,
+        });
+      }, 750);
+
     } catch (err) {
-      S_STORE.openModal('email', null, err.message);
-    } finally {
-      S_STORE.setSubmitting('email', false);
+      if (statusBox) statusBox.style.display = 'none';
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('btn-loading');
+        submitBtn.style.background = '';
+        submitBtn.style.borderColor = '';
+        submitBtn.innerHTML = `<span>Send Message</span>`;
+      }
+      if (cancelBtn) cancelBtn.disabled = false;
+      if (errBannerHost) {
+        errBannerHost.innerHTML = `<div class="err-banner">${esc(err.message || 'Failed to dispatch email. Please try again.')}</div>`;
+      }
     }
     return;
   }
@@ -1451,6 +1549,16 @@ document.addEventListener('click', async (e) => {
 
   if (action === 'close-modal') {
     S_STORE.closeModal();
+    return;
+  }
+
+  if (action === 'fill-email-recipient') {
+    const toInput = document.getElementById('emailToInput');
+    if (toInput && btn.dataset.email) {
+      toInput.value = btn.dataset.email;
+      toInput.focus();
+      saveActiveModalDraft();
+    }
     return;
   }
 

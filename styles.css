@@ -361,6 +361,72 @@ a {
   background: var(--priority-high-bg);
 }
 
+/* Email Quick Recipient Chips */
+.btn-recipient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-primary);
+  background: var(--brand-primary-light);
+  border: 1px solid rgba(0, 119, 182, 0.25);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-recipient-chip:hover {
+  background: #dbeafe;
+  border-color: var(--brand-primary);
+  transform: translateY(-1px);
+}
+
+/* Email Live Status & Progress Bar */
+.email-live-status {
+  margin: 12px 0 6px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.email-status-bar {
+  width: 100%;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.email-status-fill {
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, #0077b6, #00a896);
+  border-radius: 2px;
+  animation: emailProgressAnim 1.4s infinite ease-in-out;
+}
+@keyframes emailProgressAnim {
+  0% { width: 10%; transform: translateX(0%); }
+  50% { width: 60%; transform: translateX(50%); }
+  100% { width: 90%; transform: translateX(120%); }
+}
+.email-status-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-navy);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.email-status-success {
+  background: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  color: #15803d !important;
+}
+
 /* ============================================================================
    BADGES & PILLS
    ============================================================================ */

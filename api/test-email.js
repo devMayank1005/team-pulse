@@ -4,6 +4,7 @@ const { validateToken } = require('./_auth');
 const { applyCors } = require('./_cors');
 const { serverError, safeError } = require('./_errors');
 const { ALLOWED_SENDERS, senderAllowed, canSendAs, sendMicrosoftEmail } = require('./_mail');
+const { renderKognozEmailTemplate } = require('./_email_templates');
 
 module.exports = async function handler(req, res) {
   applyCors(req, res, 'POST, OPTIONS');
@@ -22,12 +23,25 @@ module.exports = async function handler(req, res) {
   if (!senderAllowed(sender)) return safeError(res, 403, 'This sender is not approved');
   if (!to || !subject || !body) return safeError(res, 400, 'to, subject, and body are required');
 
+  const senderName = sender.startsWith('mayank') ? 'Mayank' : sender.startsWith('yashwanth') ? 'Yashwanth Krishna' : 'Team Pulse Operations';
+  const recipientName = to.includes('@') ? to.split('@')[0].replace(/[._-]/g, ' ') : '';
+
+  const html = renderKognozEmailTemplate({
+    title: subject,
+    subtitle: 'Kognoz Consulting • Team Pulse Communications',
+    recipientName: recipientName ? recipientName.charAt(0).toUpperCase() + recipientName.slice(1) : '',
+    contentText: body,
+    senderName,
+    senderRole: 'Kognoz Consulting',
+  });
+
   try {
     const result = await sendMicrosoftEmail({
       sender,
       to: [to],
       subject,
       text: body,
+      html,
       attachments: Array.isArray(attachments) ? attachments : [],
     });
     return res.status(200).json({ ok: true, message: 'Email sent successfully', sender: result.sender });

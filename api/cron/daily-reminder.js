@@ -16,6 +16,7 @@
 
 const { logAudit } = require('../_audit');
 const { ALLOWED_SENDERS, normalizeSender, sendMicrosoftEmail } = require('../_mail');
+const { renderKognozEmailTemplate } = require('../_email_templates');
 
 function sbHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}` };
@@ -61,21 +62,31 @@ function renderPersonalSummaryText(name, buckets) {
 }
 
 function renderPersonalSummaryHtml(name, buckets, appUrl) {
-  const section = (title, items, color) => !items.length ? '' : `
-    <h3 style="margin:16px 0 6px;font:600 14px Roboto,Arial,sans-serif;color:${color}">${title} (${items.length})</h3>
-    <ul style="margin:0;padding-left:18px;font:400 14px Roboto,Arial,sans-serif;color:#1e293b">
-      ${items.map(t => `<li>${esc(t.title)}${t.due_date ? ` — due ${t.due_date}` : ''}${t.priority === 'high' ? ' <strong style="color:#dc2626">HIGH</strong>' : ''}</li>`).join('')}
-    </ul>`;
-  return `
-  <div style="font-family:Roboto,Arial,sans-serif;max-width:520px;margin:0 auto">
-    <h2 style="color:#2563eb;margin:0 0 4px">Team Pulse — Daily Summary</h2>
-    <p style="color:#475569;margin:0 0 12px">Hi ${esc(name)}, here's where your tasks stand.</p>
-    ${section('Overdue', buckets.overdue, '#dc2626')}
-    ${section('Due Today', buckets.dueToday, '#a16207')}
-    ${section('Upcoming', buckets.upcoming, '#0e7490')}
-    ${section('No Due Date', buckets.noDueDate, '#64748b')}
-    ${appUrl ? `<p style="margin-top:20px"><a href="${appUrl}" style="color:#2563eb">Open Team Pulse</a></p>` : ''}
-  </div>`;
+  const kpis = [
+    { label: 'Overdue', value: String(buckets.overdue.length), color: buckets.overdue.length > 0 ? '#dc2626' : '#64748b' },
+    { label: 'Due Today', value: String(buckets.dueToday.length), color: buckets.dueToday.length > 0 ? '#d97706' : '#64748b' },
+    { label: 'Upcoming', value: String(buckets.upcoming.length), color: '#0077b6' },
+  ];
+
+  const allActiveTasks = [
+    ...buckets.overdue.map(t => ({ title: t.title, status: 'open', priority: t.priority || 'high', dueDate: t.due_date })),
+    ...buckets.dueToday.map(t => ({ title: t.title, status: 'in_progress', priority: t.priority || 'high', dueDate: t.due_date })),
+    ...buckets.upcoming.map(t => ({ title: t.title, status: 'open', priority: t.priority, dueDate: t.due_date })),
+    ...buckets.noDueDate.map(t => ({ title: t.title, status: 'open', priority: t.priority, dueDate: null })),
+  ];
+
+  return renderKognozEmailTemplate({
+    title: 'Daily Task Digest',
+    subtitle: 'Kognoz Consulting • Personal Performance & Deliverables Track',
+    recipientName: name,
+    contentText: `Here is your current operational task summary. Please review your active milestones and prioritize any pending action items.`,
+    kpis,
+    tasks: allActiveTasks,
+    ctaText: 'Open Team Pulse Board',
+    ctaUrl: appUrl,
+    senderName: 'Team Pulse Operations',
+    senderRole: 'Kognoz Consulting',
+  });
 }
 
 function esc(s) {
