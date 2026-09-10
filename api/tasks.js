@@ -3,16 +3,29 @@
 //   POST   /api/tasks              -> create task { title, description, assigneeId, dueDate, priority }
 //   PATCH  /api/tasks?id=...       -> update task (any subset of fields, incl. status)
 //   DELETE /api/tasks?id=...       -> delete task
-// Every write is attributed + audited. Any logged-in user can create/edit
-// any task (small-team tool) — tighten to "own tasks only" later if needed.
+// Every write is attributed + audited.
+//
+// AUTHORIZATION: admins may act on any task. Members may only act on tasks
+// they are assigned to or created, may only create tasks for themselves, and
+// may never reassign — handing work to someone else is an admin act.
+// Reads stay open: the board is shared, and the UI has a My Tasks/Team toggle.
 
 const { validateToken } = require('./_auth');
 const { logAudit, clientIp } = require('./_audit');
 const { applyCors } = require('./_cors');
 const { serverError, safeError } = require('./_errors');
+const { SUPPORT_CONTACTS } = require('./_access');
 
 const STATUSES = ['open', 'in_progress', 'done'];
 const PRIORITIES = ['low', 'normal', 'high'];
+
+const NOT_YOURS = `You can only change your own tasks. Ask ${SUPPORT_CONTACTS} to change a teammate's task.`;
+const CANNOT_ASSIGN = `You can only create tasks for yourself. Ask ${SUPPORT_CONTACTS} to assign work to someone else.`;
+const CANNOT_REASSIGN = `Only an admin can reassign a task. Ask ${SUPPORT_CONTACTS}.`;
+
+function ownsTask(actor, task) {
+  return task.assignee_id === actor.id || task.created_by === actor.id;
+}
 
 module.exports = async function handler(req, res) {
   applyCors(req, res, 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -35,6 +48,18 @@ module.exports = async function handler(req, res) {
     'Content-Type': 'application/json',
   };
   const ip = clientIp(req), userAgent = req.headers['user-agent'];
+  const isAdmin = actor.role === 'admin';
+
+  // Denials are audited like any other privileged event — login.js already
+  // logs failed attempts, so there is precedent for recording what did NOT
+  // happen as well as what did.
+  async function deny(message, action) {
+    await logAudit(env, {
+      actorId: actor.id, username: actor.username, role: actor.role,
+      action, entity: 'task', screen: 'tasks', ip, userAgent,
+    });
+    return safeError(res, 403, message);
+  }
 
   try {
     if (req.method === 'GET') {
@@ -48,10 +73,16 @@ module.exports = async function handler(req, res) {
       if (!title || !title.trim()) return safeError(res, 400, 'title required');
       if (priority && !PRIORITIES.includes(priority)) return safeError(res, 400, 'invalid priority');
 
+      if (!isAdmin && assigneeId && assigneeId !== actor.id) {
+        return deny(CANNOT_ASSIGN, `Denied: create task assigned to ${assigneeId}`);
+      }
+
       const row = {
         title: title.trim(),
         description: description || null,
-        assignee_id: assigneeId || null,
+        // Unassigned work has no owner and no reminder recipient, so a new
+        // task belongs to whoever created it unless stated otherwise.
+        assignee_id: assigneeId || actor.id,
         due_date: dueDate || null,
         priority: priority || 'normal',
         status: 'open',
@@ -69,8 +100,30 @@ module.exports = async function handler(req, res) {
     const id = (req.query || {}).id;
     if (!id) return safeError(res, 400, 'id required');
 
+    // Both PATCH and DELETE need the existing row before touching it: there
+    // is no other way to know who owns a task. This also means "not found"
+    // is now decided before the write rather than inferred from an empty
+    // result afterwards.
+    const existingRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/tasks?id=eq.${encodeURIComponent(id)}&select=id,title,assignee_id,created_by&limit=1`,
+      { headers: sbHeaders }
+    );
+    if (!existingRes.ok) return res.status(500).json({ error: 'Database error' });
+    const existingRows = await existingRes.json();
+    if (!existingRows.length) return safeError(res, 404, 'Task not found');
+    const existing = existingRows[0];
+
+    if (!isAdmin && !ownsTask(actor, existing)) {
+      return deny(NOT_YOURS, `Denied: ${req.method} task "${existing.title || id}" (not owner)`);
+    }
+
     if (req.method === 'PATCH') {
       const body = req.body || {};
+
+      if (!isAdmin && body.assigneeId !== undefined && body.assigneeId !== existing.assignee_id) {
+        return deny(CANNOT_REASSIGN, `Denied: reassign task "${existing.title || id}"`);
+      }
+
       const update = { updated_at: new Date().toISOString() };
       if (body.title !== undefined) update.title = String(body.title).trim();
       if (body.description !== undefined) update.description = body.description;

@@ -15,7 +15,7 @@ Vercel Serverless Functions — /api/login, /api/auth-microsoft,
 Supabase Postgres — users · tasks · login_ip_throttle · audit_log
 ```
 
-- **Auth:** username/password (bcrypt cost 12, per-username + per-IP lockout) OR Microsoft Entra SSO. SSO automatically creates a `member` account for users in the configured tenant and `AZURE_ALLOWED_DOMAIN`.
+- **Auth:** username/password (bcrypt cost 12, per-username + per-IP lockout) OR Microsoft Entra SSO. Sign-in is **allowlisted** — see [Access control](#access-control) below. SSO proves identity only; it never creates accounts.
 - **Reminders:** a Vercel Cron job runs once a day, emails each assignee their own overdue/due-today/upcoming breakdown (via Resend), and posts one team-wide summary to a Microsoft Teams channel (as an Adaptive Card, via a Power Automate Workflows webhook). A failed Teams post never blocks the emails, but is reported as `ok: false` in the run's JSON response.
 - **Audit log:** every login, task change, and user change is recorded.
 
@@ -66,6 +66,31 @@ After first deploy, open `api/_cors.js` and replace the placeholder origin with 
    This posts a real card to the channel but sends no email and writes no audit row. Expect `"status": 202`. A `401`/`403` means the URL was mangled; a `400` means the payload was rejected.
    Env var changes on Vercel only take effect on a new deployment — redeploy after changing it.
 
+### 5b. Access control
+
+Team Pulse is a closed workspace. Two independent locks guard sign-in and **both** must pass:
+
+1. **The roster.** `api/auth-microsoft.js` does not create accounts. A user row must already exist, so the `users` table *is* the allowlist. Admins add people via **Team** (top right) — set the email exactly, since SSO matches on it.
+2. **`ALLOWED_LOGIN_EMAILS`.** A comma-separated env allowlist, enforced only when non-empty. Leave it blank to rely on the roster alone.
+
+Anyone else gets *"Permission denied. Team Pulse is limited to approved Kognoz team members..."* naming the two admins to contact. Both doors are gated: the password form checks the allowlist **after** verifying the password, so a denial never reveals whether an account exists.
+
+**Roles.** `admin` (Mayank, Yashwanth) and `member`. The list lives in `api/_access.js` — the single source of truth; `js/app.js` keeps a display-only mirror.
+
+| Action | Member | Admin |
+|---|---|---|
+| See all tasks | yes | yes |
+| Create a task for themselves | yes | yes |
+| Create a task for someone else | no | yes |
+| Edit / complete / delete **own** task | yes | yes |
+| Edit / complete / delete **another's** task | no | yes |
+| Reassign a task | no | yes |
+| Add / remove / edit users | no | yes |
+
+Enforced server-side in `api/tasks.js` and `api/users.js`. The UI hides what it can, but the server is the actual gate. Every denial is written to the audit log.
+
+Run `sql/migrations/001_access_control.sql` once to pin the admin roles and list any accounts that predate the lockdown.
+
 ### 6. Reminder time
 Default cron: `30 12 * * *` (12:30 UTC = 18:00 IST) in `vercel.json`. Vercel Hobby cron runs once/day — edit the cron expression to your team's end-of-day, then redeploy.
 
@@ -79,6 +104,7 @@ vercel dev
 Open `http://localhost:3000`. Add `http://localhost:3000` to `ALLOWED_ORIGINS` in `api/_cors.js` (already included).
 
 ## Known limitations, by design (matches Kora's documented trade-offs)
-- Any signed-in user can edit/complete any task — fine for a small trusted team; add per-user ownership checks in `api/tasks.js` if you outgrow that.
+- Everyone can *see* every task; the board is shared on purpose. Write access is restricted — members can only change their own tasks (`api/tasks.js`).
+- The task list is not filtered per user server-side, and `tasks`/`users` are in the Supabase realtime publication (`sql/schema.sql:88-89`), so per-row read privacy would need RLS policies, not just an API change.
 - Teams reminders post to one channel, not per-user DMs (a DM would need a registered Teams bot — more setup than a channel webhook).
 - No offline/PWA support (Kora has this; skipped here to keep the build lean — straightforward to add later with a `manifest.json` + service worker).

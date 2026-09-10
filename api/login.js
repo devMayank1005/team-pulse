@@ -7,7 +7,8 @@ const { signToken } = require('./_auth');
 const { logAudit, clientIp } = require('./_audit');
 const { applyCors } = require('./_cors');
 const { checkIpThrottle, recordIpFailure } = require('./_throttle');
-const { serverError } = require('./_errors');
+const { serverError, safeError } = require('./_errors');
+const { isLoginAllowed, DENIED_MESSAGE } = require('./_access');
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ATTEMPTS_BEFORE_LOCK = 5;
@@ -95,6 +96,18 @@ module.exports = async function handler(req, res) {
       await logAudit(env, { username, action: 'Login failed: wrong password', entity: 'session', screen: 'login', ip, userAgent });
       await recordIpFailure(env, ip, throttle.row);
       return res.status(401).json(INVALID);
+    }
+
+    // Allowlist check sits AFTER the password check on purpose. Running it
+    // earlier would answer "does this account exist?" for anyone who tries a
+    // name, undoing the identical-response/timing work above.
+    if (!isLoginAllowed(user.email)) {
+      await logAudit(env, {
+        actorId: user.id, username: user.username, role: user.role,
+        action: `Login denied: ${user.email} is not on the login allowlist`,
+        entity: 'session', screen: 'login', ip, userAgent,
+      });
+      return safeError(res, 403, DENIED_MESSAGE);
     }
 
     await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(user.id)}`, {

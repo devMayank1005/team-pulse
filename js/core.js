@@ -53,6 +53,11 @@ class Store {
               status: fd.status !== undefined ? fd.status : (draft.editing?.status || draft.editing?._initialStatus || 'open'),
             };
             if (draft.editing?.id) restoredEditing.id = draft.editing.id;
+            // This path rebuilds `editing` directly and so bypasses the
+            // default-assignee logic in openModal — apply it here too.
+            if (!restoredEditing.id && !restoredEditing.assignee_id && savedUser) {
+              restoredEditing.assignee_id = savedUser.id;
+            }
             initialModal = { type: 'task', editing: restoredEditing, error: null };
           } else {
             initialModal = { type: draft.type, editing: draft.formData ? { ...(draft.editing || {}), ...draft.formData } : (draft.editing || null), error: null };
@@ -363,8 +368,11 @@ class Store {
         if (isEdit) resolvedData.id = editingOrData.id;
       }
 
-      // Auto-assign to current logged-in member if creating new task in 'my' scope
-      if (!isEdit && this._state.ui.boardScope === 'my' && this._state.auth.user) {
+      // A new task defaults to whoever is creating it, on every board — not
+      // just My Tasks. Runs after the draft merge above so a saved draft
+      // still wins, and only fills an empty slot so an explicit choice
+      // (e.g. an admin creating work for someone else) is never overwritten.
+      if (!isEdit && this._state.auth.user) {
         if (!resolvedData || !resolvedData.assignee_id) {
           resolvedData = { ...(resolvedData || {}), assignee_id: this._state.auth.user.id };
         }
@@ -567,8 +575,43 @@ function esc(s) {
   }[c]));
 }
 
+// Local calendar date, NOT UTC. toISOString() would return yesterday for
+// anyone east of UTC early in the morning (in IST, midnight to 05:30), which
+// mis-flagged tasks as overdue and made a "Today" pick land on the wrong day.
+function toDateStr(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return toDateStr(new Date());
+}
+
+// Parse a YYYY-MM-DD string as a LOCAL date. new Date('2026-09-12') parses as
+// UTC midnight, which is the previous day in western timezones.
+function parseDateStr(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Whole days from a to b, both YYYY-MM-DD. Immune to DST because both ends
+// are normalized to local noon before subtracting.
+function daysBetween(aStr, bStr) {
+  const a = parseDateStr(aStr), b = parseDateStr(bStr);
+  if (!a || !b) return 0;
+  a.setHours(12, 0, 0, 0);
+  b.setHours(12, 0, 0, 0);
+  return Math.round((b - a) / 86400000);
+}
+
+function addDays(dateStr, n) {
+  const d = parseDateStr(dateStr) || new Date();
+  d.setDate(d.getDate() + n);
+  return toDateStr(d);
 }
 
 function userName(id) {
@@ -584,18 +627,27 @@ function userInitials(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// "Fri, 12 Sep" — or with the year when it isn't the current one.
+function formatDateShort(dateStr) {
+  const d = parseDateStr(dateStr);
+  if (!d) return '';
+  const opts = { weekday: 'short', day: 'numeric', month: 'short' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
+}
+
 function formatDueDate(dateStr) {
   if (!dateStr) return null;
   const today = todayStr();
   if (dateStr === today) return { label: 'Due today', status: 'today' };
   if (dateStr < today) {
-    const diffDays = Math.round((new Date(today) - new Date(dateStr)) / (1000 * 60 * 60 * 24));
+    const diffDays = daysBetween(dateStr, today);
     const label = diffDays === 1 ? '1 day overdue' : `${diffDays} days overdue`;
     return { label, status: 'overdue' };
   }
-  const diffDays = Math.round((new Date(dateStr) - new Date(today)) / (1000 * 60 * 60 * 24));
+  const diffDays = daysBetween(today, dateStr);
   if (diffDays === 1) return { label: 'Due tomorrow', status: 'upcoming' };
-  return { label: `Due ${dateStr}`, status: 'future' };
+  return { label: `Due ${formatDateShort(dateStr)}`, status: 'future' };
 }
 
 function formatFullDateTime(isoString) {

@@ -1,6 +1,14 @@
 // js/app.js — Component-Level DOM Lifecycle, Optimistic UI & Modern Interaction Layer
 // Pure Vanilla JavaScript • No Frameworks • No Build Step
 
+// Mirrors api/_access.js. There are no modules here, so the server list can't
+// be imported — keep these two in step when the team changes. The server is
+// the enforcement point; this copy only shapes what the UI offers and says.
+const ADMIN_EMAILS = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'];
+const ACCESS_DENIED_MESSAGE =
+  'Permission denied. Team Pulse is limited to approved Kognoz team members. ' +
+  `To request access, email ${ADMIN_EMAILS.join(' or ')}.`;
+
 // ============================================================================
 // COMPONENT RENDERERS
 // ============================================================================
@@ -12,7 +20,7 @@ function renderHeader() {
   if (!user) return '';
 
   const isAdmin = user.role === 'admin';
-  const canSendMail = ['mayank@kognozconsulting.com', 'yashwanth.krishna@kognozconsulting.com'].includes((user.email || '').toLowerCase());
+  const canSendMail = ADMIN_EMAILS.includes((user.email || '').toLowerCase());
   const activeView = state.ui.activeView || 'board';
   const boardScope = state.ui.boardScope || 'team';
   const isMyTasks = activeView === 'board' && boardScope === 'my';
@@ -249,6 +257,16 @@ function renderMobileTabs() {
 }
 
 // 5. Task Card Renderer
+// Mirrors the ownsTask/isAdmin rule in api/tasks.js. Cosmetic only — the
+// server is what actually rejects the write; this just avoids showing a
+// button that would come back as a 403.
+function canModifyTask(task) {
+  const me = S_STORE.getState().auth.user;
+  if (!me) return false;
+  if (me.role === 'admin') return true;
+  return task.assignee_id === me.id || task.created_by === me.id;
+}
+
 function renderTaskCard(task) {
   const dueInfo = formatDueDate(task.due_date);
   let dueBadge = '';
@@ -299,10 +317,12 @@ function renderTaskCard(task) {
       </div>
 
       <div class="card-actions">
+        ${canModifyTask(task) ? `
         ${task.status === 'open' ? `<button class="action-btn" data-action="advance-task" data-id="${task.id}" data-next="in_progress" title="Start task">${Icons.play} Start</button>` : ''}
         ${task.status === 'in_progress' ? `<button class="action-btn" data-action="advance-task" data-id="${task.id}" data-next="done" title="Complete task" style="color:var(--status-done)">${Icons.check} Complete</button>` : ''}
         <button class="action-btn" data-action="edit-task" data-id="${task.id}" title="Edit task">Edit</button>
         <button class="action-btn action-btn-danger" data-action="delete-task" data-id="${task.id}" title="Delete task">Delete</button>
+        ` : `<span class="action-locked" title="Only ${esc(name)} or an admin can change this task">Read only</span>`}
       </div>
     </div>
   </div>`;
@@ -412,9 +432,125 @@ function renderModal() {
   </div>`;
 }
 
+// ---------- Due date picker ----------
+// Open/closed and the visible month live in a module variable, not store
+// state: updateModalDom() replaces the modal's entire innerHTML on any `ui`
+// notify, so store-held picker state would be destroyed and the popover would
+// snap shut. Same approach as emailAttachmentsState above.
+//
+// The value itself lives in a hidden <input name="dueDate"> that sits OUTSIDE
+// the patched container, so it survives a repaint and keeps working with
+// FormData — which is how the form submits and how drafts are autosaved.
+let dueDatePickerState = { open: false, month: null };
+
+const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+// 0 = Monday, matching the Monday-first grid.
+function localDow(dateStr) {
+  const d = parseDateStr(dateStr);
+  return d ? (d.getDay() + 6) % 7 : 0;
+}
+
+function upcomingWeekday(fromStr, targetDow) {
+  return addDays(fromStr, (targetDow - localDow(fromStr) + 7) % 7);
+}
+
+function dueDateQuickPicks() {
+  const today = todayStr();
+  const picks = [
+    { label: 'Today', value: today },
+    { label: 'Tomorrow', value: addDays(today, 1) },
+    { label: 'This Friday', value: upcomingWeekday(today, 4) },
+    { label: 'Next week', value: addDays(today, 7) },
+  ];
+  // On a Thursday "This Friday" is just "Tomorrow"; on a Friday it is "Today".
+  // Two chips setting the same date reads as a bug, so drop the duplicate.
+  const seen = new Set();
+  const deduped = picks.filter(p => !seen.has(p.value) && seen.add(p.value));
+  return [...deduped, { label: 'No date', value: '' }];
+}
+
+function renderDueDateCalendarHtml(selected) {
+  const monthStr = dueDatePickerState.month || (selected || todayStr()).slice(0, 7);
+  const [y, m] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const leading = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const today = todayStr();
+
+  const cells = [];
+  for (let i = 0; i < leading; i++) cells.push('<span class="cal-cell"></span>');
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const cls = ['cal-day'];
+    if (ds === selected) cls.push('is-selected');
+    if (ds === today) cls.push('is-today');
+    else if (ds < today) cls.push('is-past');
+    cells.push(`<button type="button" class="cal-cell ${cls.join(' ')}" data-action="duedate-pick" data-date="${ds}" aria-label="${esc(formatDateShort(ds))}">${day}</button>`);
+  }
+
+  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  return `
+  <div class="duedate-pop" id="dueDatePop">
+    <div class="duedate-chips">
+      ${dueDateQuickPicks().map(q => `
+        <button type="button" class="duedate-chip ${selected === q.value && (q.value || selected === '') ? 'is-active' : ''}" data-action="duedate-pick" data-date="${q.value}">${q.label}</button>
+      `).join('')}
+    </div>
+    <div class="duedate-cal">
+      <div class="cal-head">
+        <button type="button" class="cal-nav" data-action="duedate-month" data-delta="-1" aria-label="Previous month">&lsaquo;</button>
+        <span class="cal-month">${esc(monthLabel)}</span>
+        <button type="button" class="cal-nav" data-action="duedate-month" data-delta="1" aria-label="Next month">&rsaquo;</button>
+      </div>
+      <div class="cal-grid cal-dow">${WEEKDAY_LABELS.map(d => `<span class="cal-cell">${d}</span>`).join('')}</div>
+      <div class="cal-grid">${cells.join('')}</div>
+    </div>
+  </div>`;
+}
+
+function renderDueDatePickerHtml(selected) {
+  const label = selected ? formatDateShort(selected) : 'No due date';
+  const info = selected ? formatDueDate(selected) : null;
+  return `
+    <button type="button" id="taskDueDateTrigger" class="duedate-trigger ${selected ? 'has-value' : ''} ${dueDatePickerState.open ? 'is-open' : ''}"
+            data-action="duedate-toggle" aria-expanded="${dueDatePickerState.open}" aria-haspopup="dialog">
+      <span class="duedate-icon">${Icons.calendar}</span>
+      <span class="duedate-label">${esc(label)}</span>
+      ${info ? `<span class="duedate-rel status-${info.status}">${esc(info.label)}</span>` : ''}
+      ${selected ? `<span class="duedate-clear" data-action="duedate-pick" data-date="" role="button" aria-label="Clear due date">✕</span>` : ''}
+    </button>
+    ${dueDatePickerState.open ? renderDueDateCalendarHtml(selected) : ''}`;
+}
+
+function currentDueDateValue() {
+  const input = document.getElementById('taskDueDateInput');
+  return input ? input.value : '';
+}
+
+function updateDueDatePickerDom() {
+  const host = document.getElementById('dueDatePickerHost');
+  if (host) host.innerHTML = renderDueDatePickerHtml(currentDueDateValue());
+}
+
+// Writes through the hidden input so FormData and the draft autosave (which
+// listens for `change` inside the modal) both see the new value.
+function setDueDateValue(value) {
+  const input = document.getElementById('taskDueDateInput');
+  if (!input) return;
+  input.value = value || '';
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  dueDatePickerState.open = false;
+  updateDueDatePickerDom();
+}
+
 function renderTaskModalForm(editing, isSubmitting, error) {
   const users = S_STORE.getState().server.users;
   const isEdit = !!(editing && editing.id);
+
+  // The modal's DOM is about to be rebuilt from scratch, so any popover that
+  // was open no longer exists — reset rather than render a detached one.
+  dueDatePickerState = { open: false, month: null };
 
   const currentTitle = editing?.title || '';
   const currentDesc = editing?.description || '';
@@ -422,6 +558,18 @@ function renderTaskModalForm(editing, isSubmitting, error) {
   const currentPriority = editing?.priority || 'normal';
   const currentDueDate = editing?.due_date || editing?.dueDate || '';
   const currentStatus = editing?.status || editing?._initialStatus || 'open';
+
+  // Members can only ever assign work to themselves; the server enforces the
+  // same rule in api/tasks.js, this just avoids offering an option that would
+  // come back as a 403. The select stays enabled — a disabled control is
+  // dropped from FormData, which would submit a null assignee and read as an
+  // attempted reassignment. The current assignee is always kept as an option
+  // so a member editing a task an admin reassigned doesn't silently move it.
+  const me = S_STORE.getState().auth.user;
+  const canAssignOthers = !!(me && me.role === 'admin');
+  const assignableUsers = canAssignOthers
+    ? users
+    : users.filter(u => u.id === (me && me.id) || u.id === currentAssignee);
 
   return `
   <div class="modal-head">
@@ -432,7 +580,7 @@ function renderTaskModalForm(editing, isSubmitting, error) {
     <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
   </div>
 
-  ${error ? `<div class="err-banner">${error}</div>` : ''}
+  ${error ? `<div class="err-banner">${esc(error)}</div>` : ''}
 
   <form id="taskForm">
     <div class="field">
@@ -450,9 +598,10 @@ function renderTaskModalForm(editing, isSubmitting, error) {
       <div class="field">
         <label for="taskAssigneeSelect">Assignee</label>
         <select id="taskAssigneeSelect" name="assigneeId">
-          <option value="">Unassigned</option>
-          ${users.map(u => `<option value="${u.id}" ${currentAssignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+          ${canAssignOthers ? '<option value="">Unassigned</option>' : ''}
+          ${assignableUsers.map(u => `<option value="${u.id}" ${currentAssignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
         </select>
+        ${canAssignOthers ? '' : '<div class="field-hint">Only an admin can assign work to a teammate.</div>'}
       </div>
 
       <div class="field">
@@ -467,8 +616,9 @@ function renderTaskModalForm(editing, isSubmitting, error) {
 
     <div style="display:grid;grid-template-columns:${isEdit ? '1fr 1fr' : '1fr'};gap:12px">
       <div class="field">
-        <label for="taskDueDateInput">Due Date</label>
-        <input type="date" id="taskDueDateInput" name="dueDate" value="${currentDueDate}" />
+        <label for="taskDueDateTrigger">Due Date</label>
+        <div class="duedate-wrap" id="dueDatePickerHost">${renderDueDatePickerHtml(currentDueDate)}</div>
+        <input type="hidden" id="taskDueDateInput" name="dueDate" value="${esc(currentDueDate)}" />
       </div>
 
       ${isEdit ? `
@@ -520,7 +670,7 @@ function renderUserModalForm(users, currentUser, isSubmitting, error, editing = 
     <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
   </div>
 
-  ${error ? `<div class="err-banner">${error}</div>` : ''}
+  ${error ? `<div class="err-banner">${esc(error)}</div>` : ''}
 
   <p style="font-size:12px;font-weight:700;color:var(--ink-secondary);text-transform:uppercase;margin-bottom:8px">Current Members (${users.length})</p>
   <div class="roster-list">
@@ -629,7 +779,7 @@ function renderEmailModalForm(isSubmitting, error, editing = null) {
     <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
   </div>
 
-  <div id="emailModalErrBanner">${error ? `<div class="err-banner">${error}</div>` : ''}</div>
+  <div id="emailModalErrBanner">${error ? `<div class="err-banner">${esc(error)}</div>` : ''}</div>
 
   <form id="emailForm">
     <div class="field">
@@ -722,7 +872,7 @@ function renderLoginModalForm(isSubmitting, error, editing = null) {
     <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
   </div>
 
-  ${error ? `<div class="err-banner">${error}</div>` : ''}
+  ${error ? `<div class="err-banner">${esc(error)}</div>` : ''}
 
   <form id="loginForm">
     <div class="field">
@@ -1250,6 +1400,13 @@ function setupModalFocusTrap() {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    // An open due-date popover swallows the first Escape, so closing the
+    // calendar doesn't also discard the half-filled task form behind it.
+    if (dueDatePickerState.open) {
+      dueDatePickerState.open = false;
+      updateDueDatePickerDom();
+      return;
+    }
     if (S_STORE.getState().ui.modal) {
       S_STORE.closeModal();
     }
@@ -1609,12 +1766,44 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  // Any click outside the due-date popover dismisses it. Deliberately does
+  // not return — the click still reaches whatever it was actually aimed at.
+  if (dueDatePickerState.open && !e.target.closest('#dueDatePickerHost')) {
+    dueDatePickerState.open = false;
+    updateDueDatePickerDom();
+  }
+
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   const action = btn.dataset.action;
 
   if (action === 'close-modal') {
     S_STORE.closeModal();
+    return;
+  }
+
+  if (action === 'duedate-toggle') {
+    dueDatePickerState.open = !dueDatePickerState.open;
+    if (dueDatePickerState.open) {
+      dueDatePickerState.month = (currentDueDateValue() || todayStr()).slice(0, 7);
+    }
+    updateDueDatePickerDom();
+    return;
+  }
+
+  if (action === 'duedate-pick') {
+    // dataset.date is '' for the "No date" chip and the clear ✕.
+    setDueDateValue(btn.dataset.date || '');
+    return;
+  }
+
+  if (action === 'duedate-month') {
+    const delta = parseInt(btn.dataset.delta, 10) || 0;
+    const base = dueDatePickerState.month || (currentDueDateValue() || todayStr()).slice(0, 7);
+    const [y, m] = base.split('-').map(Number);
+    const shifted = new Date(y, m - 1 + delta, 1);
+    dueDatePickerState.month = `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}`;
+    updateDueDatePickerDom();
     return;
   }
 
@@ -1849,8 +2038,10 @@ document.addEventListener('keydown', (e) => {
   const isZ = e.key === 'z' || e.key === 'Z' || e.keyCode === 90;
   const isCmdOrCtrl = e.metaKey || e.ctrlKey;
 
-  // Escape key closes open modal
+  // Escape key closes open modal (the due-date popover, if open, has already
+  // consumed this keypress in the handler above).
   if (e.key === 'Escape') {
+    if (dueDatePickerState.open) return;
     if (S_STORE.getState().ui.modal) {
       S_STORE.closeModal();
     }
@@ -1978,8 +2169,13 @@ async function init() {
   const ssoError = params.get('ssoError');
   if (ssoError && !S_STORE.getState().auth.user) {
     let errorMsg = 'Microsoft sign-in failed. Please try again or use your password.';
-    if (ssoError === 'not_authorized') errorMsg = "Your Microsoft account isn't on the authorized domain or user roster.";
-    else if (ssoError === 'not_configured') errorMsg = "Microsoft sign-in is not yet configured on this server.";
+    // not_allowed  -> email is off the ALLOWED_LOGIN_EMAILS allowlist
+    // not_provisioned -> no Team Pulse account exists for that email
+    // not_authorized  -> outside the permitted email domain
+    // All three mean the same thing to the person reading it: ask an admin.
+    if (ssoError === 'not_allowed' || ssoError === 'not_provisioned' || ssoError === 'not_authorized') {
+      errorMsg = ACCESS_DENIED_MESSAGE;
+    } else if (ssoError === 'not_configured') errorMsg = "Microsoft sign-in is not yet configured on this server.";
     else if (ssoError.startsWith('msft_')) errorMsg = 'Microsoft sign-in was cancelled or denied.';
 
     S_STORE.openModal('login', null, errorMsg);

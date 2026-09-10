@@ -6,20 +6,20 @@
 //   GET  /api/auth-microsoft?error=...&state=...   -> CALLBACK (cancelled/error)
 //   POST /api/auth-microsoft   { ticket }          -> EXCHANGE
 //
-// SECURITY GATE: signing in with Microsoft only grants access to accounts
-// from the configured tenant and email domain. Missing users are provisioned
-// as members with an unusable random password.
+// SECURITY GATE: Microsoft sign-in only proves identity — access additionally
+// requires (a) the configured tenant/email domain, (b) a place on the
+// ALLOWED_LOGIN_EMAILS allowlist when that is configured, and (c) a matching
+// row already in the users table. This route does NOT create accounts; an
+// admin adds people through the Team UI. See api/_access.js.
 
-const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
-const { signToken, verifySignature } = require('./_auth');
+const { verifySignature, signToken } = require('./_auth');
 const { logAudit, clientIp } = require('./_audit');
 const { applyCors, ALLOWED_ORIGINS } = require('./_cors');
+const { ADMIN_EMAILS, isLoginAllowed, normalizeEmail } = require('./_access');
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const TICKET_TTL_MS = 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-const BCRYPT_COST = 12;
 
 module.exports = async function handler(req, res) {
   applyCors(req, res, 'GET, POST, OPTIONS');
@@ -132,11 +132,12 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
       return bounceToLogin(origin, 'not_authorized', `Login failed: Microsoft account (${azureEmail}) is outside the allowed domain`);
     }
 
-    const DEFAULT_ADMINS = [
-      'mayank@kognozconsulting.com',
-      'yashwanth.krishna@kognozconsulting.com',
-    ];
-    const isDefaultAdmin = DEFAULT_ADMINS.includes(azureEmail.toLowerCase());
+    // Lock 1 of 2: the explicit email allowlist (skipped when unconfigured).
+    if (!isLoginAllowed(azureEmail)) {
+      return bounceToLogin(origin, 'not_allowed', `Login denied: ${azureEmail} is not on the login allowlist`);
+    }
+
+    const isDefaultAdmin = ADMIN_EMAILS.includes(normalizeEmail(azureEmail));
 
     // Existing users keep their configured role (or upgraded to admin if in default admins).
     const sbHeaders = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
@@ -150,30 +151,15 @@ async function handleCallback(req, res, { code, state, error: msftError }) {
     }
     const rows = await userRes.json();
     let user = rows[0];
+
+    // Lock 2 of 2: the roster. This route used to auto-provision anyone from
+    // the tenant, which made the domain check the only real barrier. Now a
+    // row must already exist — an admin adds people via the Team UI.
     if (!user) {
-      const username = `msft_${crypto.createHash('sha256').update(azureEmail.toLowerCase()).digest('hex').slice(0, 24)}`;
-      const password_hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), BCRYPT_COST);
-      const role = isDefaultAdmin ? 'admin' : 'member';
-      const createRes = await fetch(`${SUPABASE_URL}/rest/v1/users`, {
-        method: 'POST',
-        headers: { ...sbHeaders, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({
-          username,
-          password_hash,
-          name: me.displayName || azureEmail.split('@')[0],
-          email: azureEmail,
-          role,
-        }),
-      });
-      if (!createRes.ok) {
-        const body = await createRes.text().catch(() => '');
-        console.error('auth-microsoft (callback): automatic user creation failed:', createRes.status, body.slice(0, 300));
-        return bounceToLogin(origin, 'provision_failed', 'Login failed: could not create Team Pulse user');
-      }
-      const created = await createRes.json();
-      user = created[0];
-      await logAudit(env, { actorId: user.id, username: user.username, role: user.role, action: 'User auto-provisioned via Microsoft SSO', entity: 'user', screen: 'login', ip, userAgent });
-    } else if (isDefaultAdmin && user.role !== 'admin') {
+      return bounceToLogin(origin, 'not_provisioned', `Login denied: ${azureEmail} has no Team Pulse account`);
+    }
+
+    if (isDefaultAdmin && user.role !== 'admin') {
       user.role = 'admin';
       await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(user.id)}`, {
         method: 'PATCH',
