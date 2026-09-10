@@ -748,6 +748,13 @@ a {
    ============================================================================ */
 
 .toolbar-card {
+  /* backdrop-filter below creates a stacking context, so any z-index inside
+     this card is scoped to it. Without an explicit z-index here the card
+     paints at level 0 and .kanban-col (also backdrop-filtered, and a later
+     sibling) covers the open filter panel. 30 sits above the board and below
+     the sticky topbar (40), modal backdrop (50) and toasts (60). */
+  position: relative;
+  z-index: 30;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -816,6 +823,10 @@ a {
 }
 
 .filters-group {
+  /* Own full-width row. Sharing a line with .search-box (flex:1) meant
+     whether these wrapped depended on the Reset button appearing, which
+     changed the toolbar height and made the board jump. */
+  flex-basis: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1275,6 +1286,9 @@ a {
 }
 
 .history-toolbar-card {
+  /* Same stacking-context trap as .toolbar-card — see the note there. */
+  position: relative;
+  z-index: 30;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -2270,7 +2284,18 @@ a {
 
 .ms-label { color: var(--ink-muted); font-weight: 600; }
 .ms-trigger.has-value .ms-label { color: var(--primary); opacity: 0.75; }
-.ms-summary { font-weight: 700; }
+/* Fixed width so the trigger never resizes with its label ("All" ->
+   "In Progress" -> "2 selected" -> a full name). Without this, picking one
+   assignee moved the button 350px and dragged every other filter with it. */
+.ms-summary {
+  display: inline-block;
+  width: 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-weight: 700;
+}
 .ms-caret { font-size: 10px; opacity: 0.6; margin-left: 1px; }
 
 /* Above the sticky topbar (40), below the modal backdrop (50). */
@@ -2391,5 +2416,6 @@ a {
 @media (max-width: 560px) {
   .ms-wrap { display: block; }
   .ms-trigger { width: 100%; justify-content: flex-start; }
+  .ms-summary { width: auto; flex: 1; }
   .ms-panel { left: 0; right: 0; min-width: 0; max-width: none; }
 }
