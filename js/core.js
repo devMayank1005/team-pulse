@@ -54,9 +54,15 @@ class Store {
             };
             if (draft.editing?.id) restoredEditing.id = draft.editing.id;
             // This path rebuilds `editing` directly and so bypasses the
-            // default-assignee logic in openModal — apply it here too.
-            if (!restoredEditing.id && !restoredEditing.assignee_id && savedUser) {
-              restoredEditing.assignee_id = savedUser.id;
+            // new-task defaults in openModal — apply them here too, and
+            // likewise leave alone any field the saved form already set.
+            if (!restoredEditing.id) {
+              if (savedUser && fd.assigneeId === undefined && !restoredEditing.assignee_id) {
+                restoredEditing.assignee_id = savedUser.id;
+              }
+              if (fd.dueDate === undefined && !restoredEditing.due_date) {
+                restoredEditing.due_date = todayStr();
+              }
             }
             initialModal = { type: 'task', editing: restoredEditing, error: null };
           } else {
@@ -368,13 +374,20 @@ class Store {
         if (isEdit) resolvedData.id = editingOrData.id;
       }
 
-      // A new task defaults to whoever is creating it, on every board — not
-      // just My Tasks. Runs after the draft merge above so a saved draft
-      // still wins, and only fills an empty slot so an explicit choice
-      // (e.g. an admin creating work for someone else) is never overwritten.
-      if (!isEdit && this._state.auth.user) {
-        if (!resolvedData || !resolvedData.assignee_id) {
+      // Defaults for a NEW task: assign it to whoever is creating it (on
+      // every board, not just My Tasks) and make it due today.
+      //
+      // A field the draft already spoke to is left alone even when it is
+      // empty: clearing the date or picking "Unassigned" writes '' to the
+      // draft, and re-filling that on reopen would fight the user.
+      if (!isEdit) {
+        const draftSaid = key => !!(draft && draft[key] !== undefined);
+
+        if (this._state.auth.user && !draftSaid('assigneeId') && !resolvedData?.assignee_id) {
           resolvedData = { ...(resolvedData || {}), assignee_id: this._state.auth.user.id };
+        }
+        if (!draftSaid('dueDate') && !resolvedData?.due_date) {
+          resolvedData = { ...(resolvedData || {}), due_date: todayStr() };
         }
       }
     }
@@ -606,12 +619,6 @@ function daysBetween(aStr, bStr) {
   a.setHours(12, 0, 0, 0);
   b.setHours(12, 0, 0, 0);
   return Math.round((b - a) / 86400000);
-}
-
-function addDays(dateStr, n) {
-  const d = parseDateStr(dateStr) || new Date();
-  d.setDate(d.getDate() + n);
-  return toDateStr(d);
 }
 
 function userName(id) {
