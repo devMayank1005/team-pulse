@@ -26,6 +26,44 @@ function clearTaskDraft(taskId) {
   } catch {}
 }
 
+// ---------- Filter shape ----------
+// assignee/status/priority/dueDate are ARRAYS. An empty array means "no
+// constraint" — there is no 'all' sentinel. `search` and `sort` stay scalar.
+//
+// The one trap to respect everywhere: [] is truthy, so a guard written as
+// `if (filters.status && ...)` passes for an empty selection and would filter
+// every task away. Always test length — that is what these two helpers are for.
+function isFilterActive(sel) {
+  return Array.isArray(sel) && sel.length > 0;
+}
+
+function selectionAllows(sel, value) {
+  return !isFilterActive(sel) || sel.includes(value);
+}
+
+// Fresh arrays on every call, so a reset can never hand back a reference that
+// is shared with the previous state object.
+function defaultFilters() {
+  return {
+    search: '',
+    assignee: [],
+    status: [],
+    priority: [],
+    dueDate: [],
+    sort: 'due_date_asc',
+  };
+}
+
+// Timeframe stays a scalar: its buckets are nested ranges (today ⊂ week ⊂
+// month), so multi-select would only ever mean "the widest one wins".
+function defaultHistoryFilters() {
+  return {
+    search: '',
+    assignee: [],
+    timeframe: 'all', // 'all' | 'today' | 'week' | 'month'
+  };
+}
+
 class Store {
   constructor() {
     let savedUser = null;
@@ -84,14 +122,7 @@ class Store {
         users: [],
         lastSync: null,
       },
-      filters: {
-        search: '',
-        assignee: 'all',
-        status: 'all',
-        priority: 'all',
-        dueDate: 'all',
-        sort: 'due_date_asc',
-      },
+      filters: defaultFilters(),
       ui: {
         modal: initialModal, // restored on page reload/refresh if user was editing
         isInitialLoading: true,
@@ -103,9 +134,7 @@ class Store {
       },
       history: {
         tab: 'tasks', // 'tasks' | 'activity'
-        search: '',
-        assignee: 'all',
-        timeframe: 'all', // 'all' | 'today' | 'week' | 'month'
+        ...defaultHistoryFilters(),
         activityLogs: [],
         isLoadingLogs: false,
       },
@@ -332,26 +361,32 @@ class Store {
   }
 
   // ---------- Filter Actions ----------
+  // `search` and `sort` are scalars; assignee/status/priority/dueDate are
+  // arrays where an EMPTY array means "no constraint" (there is no 'all'
+  // sentinel). Every write must build a NEW array — the identity guard below
+  // would swallow an in-place mutation and the UI would silently not update.
   setFilter(key, value) {
     if (this._state.filters[key] === value) return;
     this._state.filters = { ...this._state.filters, [key]: value };
     this._notify('filters');
   }
 
-  setFilters(newFilters) {
-    this._state.filters = { ...this._state.filters, ...newFilters };
+  // Single entry point for both the checkbox dropdowns and the member pills.
+  toggleFilterValue(key, value) {
+    const cur = Array.isArray(this._state.filters[key]) ? this._state.filters[key] : [];
+    const next = cur.includes(value) ? cur.filter(v => v !== value) : [...cur, value];
+    this._state.filters = { ...this._state.filters, [key]: next };
+    this._notify('filters');
+  }
+
+  clearFilterKey(key) {
+    if (!isFilterActive(this._state.filters[key])) return;
+    this._state.filters = { ...this._state.filters, [key]: [] };
     this._notify('filters');
   }
 
   resetFilters() {
-    this._state.filters = {
-      search: '',
-      assignee: 'all',
-      status: 'all',
-      priority: 'all',
-      dueDate: 'all',
-      sort: 'due_date_asc',
-    };
+    this._state.filters = defaultFilters();
     this._notify('filters');
   }
 
@@ -454,8 +489,10 @@ class Store {
     if (this._state.ui.boardScope === scope && this._state.ui.activeView === 'board') return;
     this._state.ui.boardScope = scope;
     this._state.ui.activeView = 'board';
-    if (scope === 'my') {
-      this._state.filters.assignee = 'all';
+    // Scope narrows to the current user first and the assignee filter second,
+    // so leaving someone else selected would intersect to an empty board.
+    if (scope === 'my' && isFilterActive(this._state.filters.assignee)) {
+      this._state.filters = { ...this._state.filters, assignee: [] };
     }
     this._notify('ui');
   }
@@ -479,12 +516,23 @@ class Store {
     this._notify('history');
   }
 
+  toggleHistoryFilterValue(key, value) {
+    const cur = Array.isArray(this._state.history[key]) ? this._state.history[key] : [];
+    const next = cur.includes(value) ? cur.filter(v => v !== value) : [...cur, value];
+    this._state.history = { ...this._state.history, [key]: next };
+    this._notify('history');
+  }
+
+  clearHistoryFilterKey(key) {
+    if (!isFilterActive(this._state.history[key])) return;
+    this._state.history = { ...this._state.history, [key]: [] };
+    this._notify('history');
+  }
+
   resetHistoryFilters() {
     this._state.history = {
       ...this._state.history,
-      search: '',
-      assignee: 'all',
-      timeframe: 'all',
+      ...defaultHistoryFilters(),
     };
     this._notify('history');
   }
@@ -735,13 +783,18 @@ function computeMetrics(tasks) {
   return { total, inProgress, completed, overdue, dueToday };
 }
 
-function getScopedTasks(state) {
-  const { server, ui, auth } = state;
-  const tasks = server.tasks || [];
-  if (ui.boardScope === 'my' && auth.user && auth.user.id) {
-    return tasks.filter(t => t.assignee_id === auth.user.id);
-  }
-  return tasks;
+// Which due-date bucket a task falls in, or null for none of them.
+//
+// Mirrors the four branches this replaced, including their asymmetries:
+// 'overdue' excludes completed work, 'today' does not, and 'upcoming' is
+// strictly after today so "due today" is not upcoming. A task that is past
+// due AND done matched none of the old branches and must keep matching none,
+// hence the null.
+function dueDateBucket(t, today) {
+  if (!t.due_date) return 'none';
+  if (t.due_date === today) return 'today';
+  if (t.due_date > today) return 'upcoming';
+  return t.status === 'done' ? null : 'overdue';
 }
 
 function filterAndSortTasks(tasks, filters, users = [], scope = 'team', currentUser = null) {
@@ -757,37 +810,13 @@ function filterAndSortTasks(tasks, filters, users = [], scope = 'team', currentU
   const userMap = new Map(users.map(u => [u.id, (u.name || '').toLowerCase()]));
 
   const filtered = scoped.filter(t => {
-    // Assignee filter
-    if (filters.assignee && filters.assignee !== 'all') {
-      if (filters.assignee === 'unassigned') {
-        if (t.assignee_id) return false;
-      } else if (t.assignee_id !== filters.assignee) {
-        return false;
-      }
-    }
-
-    // Status filter
-    if (filters.status && filters.status !== 'all' && t.status !== filters.status) {
-      return false;
-    }
-
-    // Priority filter
-    if (filters.priority && filters.priority !== 'all' && t.priority !== filters.priority) {
-      return false;
-    }
-
-    // Due date filter
-    if (filters.dueDate && filters.dueDate !== 'all') {
-      if (filters.dueDate === 'overdue') {
-        if (!t.due_date || t.due_date >= today || t.status === 'done') return false;
-      } else if (filters.dueDate === 'today') {
-        if (t.due_date !== today) return false;
-      } else if (filters.dueDate === 'upcoming') {
-        if (!t.due_date || t.due_date <= today) return false;
-      } else if (filters.dueDate === 'none') {
-        if (t.due_date) return false;
-      }
-    }
+    // Each selection is an OR within itself and an AND against the others:
+    // "(Mayank or Angrah) and (Open or In Progress)". An empty selection
+    // imposes nothing — see selectionAllows.
+    if (!selectionAllows(filters.assignee, t.assignee_id || 'unassigned')) return false;
+    if (!selectionAllows(filters.status, t.status)) return false;
+    if (!selectionAllows(filters.priority, t.priority)) return false;
+    if (isFilterActive(filters.dueDate) && !filters.dueDate.includes(dueDateBucket(t, today))) return false;
 
     // Search query across title, description, and assignee name
     if (query) {
@@ -852,7 +881,7 @@ function getTimelinessInfo(dueDateStr, completedAtStr) {
 
 function groupCompletedTasks(tasks, historyFilter = {}, users = []) {
   const query = (historyFilter.search || '').toLowerCase().trim();
-  const assigneeFilter = historyFilter.assignee || 'all';
+  const assigneeFilter = historyFilter.assignee; // array; empty = everyone
   const timeframeFilter = historyFilter.timeframe || 'all';
   const userMap = new Map(users.map(u => [u.id, (u.name || '').toLowerCase()]));
 
@@ -870,11 +899,8 @@ function groupCompletedTasks(tasks, historyFilter = {}, users = []) {
   const completedTasks = tasks.filter(t => {
     if (t.status !== 'done') return false;
 
-    // Assignee filter
-    if (assigneeFilter !== 'all') {
-      if (assigneeFilter === 'unassigned' && t.assignee_id) return false;
-      if (assigneeFilter !== 'unassigned' && t.assignee_id !== assigneeFilter) return false;
-    }
+    // Assignee filter — empty selection means everyone
+    if (!selectionAllows(assigneeFilter, t.assignee_id || 'unassigned')) return false;
 
     // Timeframe filter
     const compTime = t.completed_at ? new Date(t.completed_at) : new Date(t.updated_at || 0);

@@ -2218,3 +2218,178 @@ a {
   border-radius: var(--radius-pill);
   white-space: nowrap;
 }
+
+/* ============================================================================
+   MULTI-SELECT FILTER DROPDOWN
+   Replaces the single-value <select> filters. Selected-row styling matches
+   .member-filter-chip.active so the two assignee controls read as one.
+   ============================================================================ */
+
+.ms-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.ms-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 11px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: var(--glass-blur-subtle);
+  -webkit-backdrop-filter: var(--glass-blur-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.ms-trigger:hover {
+  background: #ffffff;
+  border-color: rgba(148, 163, 184, 0.6);
+}
+
+.ms-trigger:focus-visible,
+.ms-trigger.is-open {
+  outline: none;
+  background: #ffffff;
+  border-color: var(--glass-border-focus);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.ms-trigger.has-value {
+  color: var(--primary);
+  border-color: var(--primary-border);
+  background: #ffffff;
+}
+
+.ms-label { color: var(--ink-muted); font-weight: 600; }
+.ms-trigger.has-value .ms-label { color: var(--primary); opacity: 0.75; }
+.ms-summary { font-weight: 700; }
+.ms-caret { font-size: 10px; opacity: 0.6; margin-left: 1px; }
+
+/* Above the sticky topbar (40), below the modal backdrop (50). */
+.ms-panel {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 210px;
+  max-width: 280px;
+  background: var(--glass-bg-active);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: msPopIn 0.16s var(--ease-spring);
+}
+
+@keyframes msPopIn {
+  from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* Keeps a long roster scrollable rather than running off the viewport. */
+.ms-options {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.ms-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ms-option:hover,
+.ms-option:focus-visible {
+  outline: none;
+  color: var(--ink);
+  background: var(--primary-subtle);
+}
+
+.ms-option.is-on { color: var(--primary); font-weight: 700; }
+
+.ms-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--glass-border-subtle);
+  border-radius: 5px;
+  background: #ffffff;
+  color: #ffffff;
+  transition: all var(--transition-fast);
+}
+
+.ms-option.is-on .ms-check {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.ms-check svg { width: 11px; height: 11px; }
+
+.ms-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-top: 1px solid var(--glass-border-subtle);
+  background: rgba(248, 250, 252, 0.6);
+}
+
+.ms-clear,
+.ms-done {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ms-clear { color: var(--ink-muted); background: transparent; }
+.ms-clear:hover:not(:disabled) { color: var(--priority-high); background: var(--priority-high-bg); }
+.ms-clear:disabled { opacity: 0.4; cursor: default; }
+
+.ms-done { color: var(--primary); background: var(--primary-subtle); }
+.ms-done:hover { color: #ffffff; background: var(--primary); }
+
+/* Narrow screens: the toolbar stacks, so let the panel use the full width
+   and anchor right-side triggers so they can't run off-screen. */
+@media (max-width: 560px) {
+  .ms-wrap { display: block; }
+  .ms-trigger { width: 100%; justify-content: flex-start; }
+  .ms-panel { left: 0; right: 0; min-width: 0; max-width: none; }
+}

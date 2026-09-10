@@ -62,11 +62,10 @@ function renderHistoryView() {
         </div>
 
         <div class="filters-group">
-          <select class="filter-select" data-history-filter="assignee" title="Filter by Assignee">
-            <option value="all">Assignee: Everyone</option>
-            <option value="unassigned" ${history.assignee === 'unassigned' ? 'selected' : ''}>Unassigned</option>
-            ${users.map(u => `<option value="${u.id}" ${history.assignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
-          </select>
+          ${renderFilterDropdown({
+            key: 'assignee', label: 'Assignee', options: assigneeOptions(users),
+            selected: history.assignee, scope: 'history',
+          })}
 
           <select class="filter-select" data-history-filter="timeframe" title="Filter by Timeframe">
             <option value="all" ${history.timeframe === 'all' ? 'selected' : ''}>Timeframe: All Time</option>
@@ -75,7 +74,7 @@ function renderHistoryView() {
             <option value="month" ${history.timeframe === 'month' ? 'selected' : ''}>Past 30 Days</option>
           </select>
 
-          ${(history.search || history.assignee !== 'all' || history.timeframe !== 'all') ? `
+          ${(history.search || isFilterActive(history.assignee) || history.timeframe !== 'all') ? `
             <button class="btn-clear-filters" data-action="reset-history-filters">✕ Reset</button>
           ` : ''}
 

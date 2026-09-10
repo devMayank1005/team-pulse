@@ -117,6 +117,86 @@ function renderSummaryMetrics() {
 }
 
 // 3. Toolbar (Search, Filters, Sort, Actions)
+// ---------- Multi-select filter dropdown ----------
+// Which panel is open lives in a module variable rather than Store state:
+// updateToolbarDom() replaces #toolbarHost wholesale on every filters/tasks/
+// users/ui notify (including realtime pushes), so a DOM node can't persist —
+// and putting it in the Store would fire yet another repaint. Because the
+// panel is RENDERED from this variable, a repaint rebuilds it already-open
+// and it reads as continuous while the board updates behind it.
+// Same trick as emailAttachmentsState below.
+let openFilterDropdown = null; // e.g. 'assignee' | 'status' | 'history:assignee'
+
+function filterSummary(selected, options) {
+  if (!isFilterActive(selected)) return 'All';
+  if (selected.length === 1) {
+    const hit = options.find(o => o.value === selected[0]);
+    return hit ? hit.label : '1 selected';
+  }
+  return `${selected.length} selected`;
+}
+
+// One component, five uses (four board + one History). `scope` namespaces the
+// open-state key so the board and History panels can't collide.
+function renderFilterDropdown({ key, label, options, selected, scope = 'board' }) {
+  const openKey = scope === 'board' ? key : `${scope}:${key}`;
+  const isOpen = openFilterDropdown === openKey;
+  const active = isFilterActive(selected);
+
+  return `
+  <div class="ms-wrap">
+    <button type="button" class="ms-trigger ${active ? 'has-value' : ''} ${isOpen ? 'is-open' : ''}"
+            data-action="filter-dropdown-toggle" data-key="${esc(openKey)}"
+            aria-haspopup="listbox" aria-expanded="${isOpen}" title="Filter by ${esc(label)}">
+      <span class="ms-label">${esc(label)}:</span>
+      <span class="ms-summary">${esc(filterSummary(selected, options))}</span>
+      <span class="ms-caret" aria-hidden="true">▾</span>
+    </button>
+    ${isOpen ? `
+    <div class="ms-panel" role="listbox" aria-multiselectable="true" aria-label="${esc(label)}">
+      <div class="ms-options">
+        ${options.map(o => {
+          const on = Array.isArray(selected) && selected.includes(o.value);
+          return `
+          <button type="button" class="ms-option ${on ? 'is-on' : ''}" role="option" aria-selected="${on}"
+                  data-action="filter-option-toggle" data-scope="${esc(scope)}" data-key="${esc(key)}" data-value="${esc(o.value)}">
+            <span class="ms-check" aria-hidden="true">${on ? Icons.check : ''}</span>
+            <span class="ms-option-label">${esc(o.label)}</span>
+          </button>`;
+        }).join('')}
+      </div>
+      <div class="ms-foot">
+        <button type="button" class="ms-clear" data-action="filter-clear-key" data-scope="${esc(scope)}" data-key="${esc(key)}" ${active ? '' : 'disabled'}>Clear</button>
+        <button type="button" class="ms-done" data-action="filter-dropdown-toggle" data-key="${esc(openKey)}">Done</button>
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
+const STATUS_OPTIONS = [
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'done', label: 'Done' },
+];
+const PRIORITY_OPTIONS = [
+  { value: 'high', label: 'High' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Low' },
+];
+const DUE_DATE_OPTIONS = [
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'today', label: 'Due Today' },
+  { value: 'upcoming', label: 'Upcoming' },
+  { value: 'none', label: 'No Due Date' },
+];
+
+function assigneeOptions(users) {
+  return [
+    ...users.map(u => ({ value: u.id, label: u.name })),
+    { value: 'unassigned', label: 'Unassigned' },
+  ];
+}
+
 function renderToolbar() {
   const state = S_STORE.getState();
   const { filters, server, ui, auth } = state;
@@ -124,7 +204,8 @@ function renderToolbar() {
   const isMyTasks = ui.boardScope === 'my';
   const user = auth.user;
 
-  const hasActiveFilters = filters.search || (filters.assignee !== 'all' && !isMyTasks) || filters.status !== 'all' || filters.priority !== 'all' || filters.dueDate !== 'all';
+  const hasActiveFilters = !!filters.search || (isFilterActive(filters.assignee) && !isMyTasks)
+    || isFilterActive(filters.status) || isFilterActive(filters.priority) || isFilterActive(filters.dueDate);
 
   // Compute counts for Member Quick Filter Pills in Team Board
   let memberPillsHtml = '';
@@ -137,13 +218,13 @@ function renderToolbar() {
       <span style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-muted);margin-right:4px">
         Quick Filter:
       </span>
-      <button type="button" class="member-filter-chip ${filters.assignee === 'all' ? 'active' : ''}" data-action="set-assignee-filter" data-assignee="all">
+      <button type="button" class="member-filter-chip ${!isFilterActive(filters.assignee) ? 'active' : ''}" data-action="clear-assignee-filter">
         <span>👥 All Team</span>
         <span class="member-filter-count">${allCount}</span>
       </button>
       ${users.map(u => {
         const uCount = server.tasks.filter(t => t.assignee_id === u.id && t.status !== 'done').length;
-        const isCurrent = filters.assignee === u.id;
+        const isCurrent = Array.isArray(filters.assignee) && filters.assignee.includes(u.id);
         return `
         <button type="button" class="member-filter-chip ${isCurrent ? 'active' : ''}" data-action="set-assignee-filter" data-assignee="${esc(u.id)}" title="Filter by ${esc(u.name)}">
           <span class="member-filter-avatar">${userInitials(u.name)}</span>
@@ -151,7 +232,7 @@ function renderToolbar() {
           <span class="member-filter-count">${uCount}</span>
         </button>`;
       }).join('')}
-      <button type="button" class="member-filter-chip ${filters.assignee === 'unassigned' ? 'active' : ''}" data-action="set-assignee-filter" data-assignee="unassigned">
+      <button type="button" class="member-filter-chip ${Array.isArray(filters.assignee) && filters.assignee.includes('unassigned') ? 'active' : ''}" data-action="set-assignee-filter" data-assignee="unassigned">
         <span>⚪ Unassigned</span>
         <span class="member-filter-count">${unassignedCount}</span>
       </button>
@@ -185,34 +266,15 @@ function renderToolbar() {
 
         <!-- Filters Dropdowns -->
         <div class="filters-group">
-          ${!isMyTasks ? `
-          <select class="filter-select" data-filter="assignee" title="Filter by Assignee">
-            <option value="all">Assignee: Everyone</option>
-            <option value="unassigned" ${filters.assignee === 'unassigned' ? 'selected' : ''}>Unassigned</option>
-            ${users.map(u => `<option value="${u.id}" ${filters.assignee === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
-          </select>` : ''}
+          ${!isMyTasks ? renderFilterDropdown({
+            key: 'assignee', label: 'Assignee', options: assigneeOptions(users), selected: filters.assignee,
+          }) : ''}
 
-          <select class="filter-select" data-filter="status" title="Filter by Status">
-            <option value="all">Status: All</option>
-            <option value="open" ${filters.status === 'open' ? 'selected' : ''}>Open</option>
-            <option value="in_progress" ${filters.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
-            <option value="done" ${filters.status === 'done' ? 'selected' : ''}>Done</option>
-          </select>
+          ${renderFilterDropdown({ key: 'status', label: 'Status', options: STATUS_OPTIONS, selected: filters.status })}
 
-          <select class="filter-select" data-filter="priority" title="Filter by Priority">
-            <option value="all">Priority: All</option>
-            <option value="high" ${filters.priority === 'high' ? 'selected' : ''}>High</option>
-            <option value="normal" ${filters.priority === 'normal' ? 'selected' : ''}>Normal</option>
-            <option value="low" ${filters.priority === 'low' ? 'selected' : ''}>Low</option>
-          </select>
+          ${renderFilterDropdown({ key: 'priority', label: 'Priority', options: PRIORITY_OPTIONS, selected: filters.priority })}
 
-          <select class="filter-select" data-filter="dueDate" title="Filter by Due Date">
-            <option value="all">Due Date: All</option>
-            <option value="overdue" ${filters.dueDate === 'overdue' ? 'selected' : ''}>Overdue</option>
-            <option value="today" ${filters.dueDate === 'today' ? 'selected' : ''}>Due Today</option>
-            <option value="upcoming" ${filters.dueDate === 'upcoming' ? 'selected' : ''}>Upcoming</option>
-            <option value="none" ${filters.dueDate === 'none' ? 'selected' : ''}>No Due Date</option>
-          </select>
+          ${renderFilterDropdown({ key: 'dueDate', label: 'Due Date', options: DUE_DATE_OPTIONS, selected: filters.dueDate })}
 
           <select class="filter-select" data-filter="sort" title="Sort Order">
             <option value="due_date_asc" ${filters.sort === 'due_date_asc' ? 'selected' : ''}>Sort: Due Date (Earliest)</option>
@@ -364,7 +426,7 @@ function renderBoard() {
             : `<div class="empty-col-state">
                 ${Icons.emptyTask}
                 <div class="empty-text">No ${col.label.toLowerCase()} tasks</div>
-                <div class="empty-subtext">${filters.search || (filters.assignee !== 'all' && ui.boardScope !== 'my') ? 'Try adjusting your filters' : 'Drag tasks here or add a new one'}</div>
+                <div class="empty-subtext">${filters.search || (isFilterActive(filters.assignee) && ui.boardScope !== 'my') ? 'Try adjusting your filters' : 'Drag tasks here or add a new one'}</div>
                </div>`
           }
         </div>
@@ -1062,6 +1124,17 @@ function updateSummaryDom() {
   if (el) el.innerHTML = renderSummaryMetrics();
 }
 
+// Opening/closing a panel is module state, not store state, so nothing
+// repaints on its own. Repaint whichever surface currently hosts a dropdown.
+function repaintFilterSurfaces() {
+  if (S_STORE.getState().ui.activeView === 'history') {
+    const host = document.getElementById('historyViewHost');
+    if (host) host.innerHTML = renderHistoryView();
+  } else {
+    updateToolbarDom();
+  }
+}
+
 function updateToolbarDom() {
   const el = document.getElementById('toolbarHost');
   if (!el) return;
@@ -1283,9 +1356,30 @@ function setupModalFocusTrap() {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    // An open filter panel takes the first Escape.
+    if (openFilterDropdown && !S_STORE.getState().ui.modal) {
+      openFilterDropdown = null;
+      repaintFilterSurfaces();
+      return;
+    }
     if (S_STORE.getState().ui.modal) {
       S_STORE.closeModal();
     }
+  }
+
+  // Arrow-key navigation inside an open panel. A native <select> gave this
+  // for free; a custom widget has to provide it.
+  if (openFilterDropdown && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    const panel = document.querySelector('.ms-panel');
+    if (!panel) return;
+    const items = [...panel.querySelectorAll('.ms-option')];
+    if (!items.length) return;
+    e.preventDefault();
+    const at = items.indexOf(document.activeElement);
+    const next = e.key === 'ArrowDown'
+      ? (at < 0 ? 0 : (at + 1) % items.length)
+      : (at < 0 ? items.length - 1 : (at - 1 + items.length) % items.length);
+    items[next].focus();
   }
 });
 
@@ -1642,6 +1736,13 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  // A click anywhere outside an open filter panel dismisses it. Deliberately
+  // falls through so the click still reaches its actual target.
+  if (openFilterDropdown && !e.target.closest('.ms-wrap')) {
+    openFilterDropdown = null;
+    repaintFilterSurfaces();
+  }
+
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   const action = btn.dataset.action;
@@ -1753,8 +1854,40 @@ document.addEventListener('click', async (e) => {
   }
 
   if (action === 'set-assignee-filter') {
-    const assignee = btn.dataset.assignee || 'all';
-    S_STORE.setFilter('assignee', assignee);
+    // The member pills and the Assignee dropdown drive the same array.
+    S_STORE.toggleFilterValue('assignee', btn.dataset.assignee);
+    return;
+  }
+
+  if (action === 'clear-assignee-filter') {
+    S_STORE.clearFilterKey('assignee');
+    return;
+  }
+
+  if (action === 'filter-dropdown-toggle') {
+    const key = btn.dataset.key;
+    openFilterDropdown = (openFilterDropdown === key) ? null : key;
+    repaintFilterSurfaces();
+    return;
+  }
+
+  if (action === 'filter-option-toggle') {
+    // The panel stays open so several options can be picked in one go; the
+    // store notify repaints the toolbar and re-renders it already-open.
+    if (btn.dataset.scope === 'history') {
+      S_STORE.toggleHistoryFilterValue(btn.dataset.key, btn.dataset.value);
+    } else {
+      S_STORE.toggleFilterValue(btn.dataset.key, btn.dataset.value);
+    }
+    return;
+  }
+
+  if (action === 'filter-clear-key') {
+    if (btn.dataset.scope === 'history') {
+      S_STORE.clearHistoryFilterKey(btn.dataset.key);
+    } else {
+      S_STORE.clearFilterKey(btn.dataset.key);
+    }
     return;
   }
 
@@ -1882,8 +2015,10 @@ document.addEventListener('keydown', (e) => {
   const isZ = e.key === 'z' || e.key === 'Z' || e.keyCode === 90;
   const isCmdOrCtrl = e.metaKey || e.ctrlKey;
 
-  // Escape key closes open modal
+  // Escape key closes open modal (an open filter panel consumed this
+  // keypress in the handler above).
   if (e.key === 'Escape') {
+    if (openFilterDropdown) return;
     if (S_STORE.getState().ui.modal) {
       S_STORE.closeModal();
     }
