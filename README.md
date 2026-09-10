@@ -16,7 +16,7 @@ Supabase Postgres — users · tasks · login_ip_throttle · audit_log
 ```
 
 - **Auth:** username/password (bcrypt cost 12, per-username + per-IP lockout) OR Microsoft Entra SSO. SSO automatically creates a `member` account for users in the configured tenant and `AZURE_ALLOWED_DOMAIN`.
-- **Reminders:** a Vercel Cron job runs once a day, emails each assignee their own overdue/due-today/upcoming breakdown (via Resend), and posts one team-wide summary to a Microsoft Teams channel (via Incoming Webhook).
+- **Reminders:** a Vercel Cron job runs once a day, emails each assignee their own overdue/due-today/upcoming breakdown (via Resend), and posts one team-wide summary to a Microsoft Teams channel (as an Adaptive Card, via a Power Automate Workflows webhook). A failed Teams post never blocks the emails, but is reported as `ok: false` in the run's JSON response.
 - **Audit log:** every login, task change, and user change is recorded.
 
 ## Setup
@@ -55,9 +55,16 @@ After first deploy, open `api/_cors.js` and replace the placeholder origin with 
 2. Set `RESEND_API_KEY` and `REMINDER_FROM_EMAIL`.
 
 ### 5. Teams reminders (optional)
-1. In the target Teams channel: **⋯ → Connectors → Incoming Webhook** → name it, copy the URL.
-   (If your tenant has retired Connectors in favor of Workflows: **⋯ → Workflows → "Post to a channel when a webhook request is received"** — copy that URL instead, same env var.)
-2. Set `TEAMS_WEBHOOK_URL`.
+1. In the target Teams channel: **⋯ → Workflows → "Post to a channel when a webhook request is received"** → name it, copy the generated URL.
+   (Microsoft has retired the older **Connectors → Incoming Webhook** path. If you still have a `*.webhook.office.com` URL it may keep working for now, but expect it to stop; the same env var takes either.)
+2. Set `TEAMS_WEBHOOK_URL`. Paste the URL exactly as copied — the signature covers the percent-encoding, so `%2F` must not be decoded and no line-wrap whitespace may creep in. Quote it in `.env` files, since it contains `&`.
+3. The daily summary is posted as an **Adaptive Card**. Verify the wiring without waiting for the schedule:
+   ```bash
+   curl -s -H "Authorization: Bearer $CRON_SECRET" \
+     "$APP_URL/api/cron/daily-reminder?test=teams" | jq
+   ```
+   This posts a real card to the channel but sends no email and writes no audit row. Expect `"status": 202`. A `401`/`403` means the URL was mangled; a `400` means the payload was rejected.
+   Env var changes on Vercel only take effect on a new deployment — redeploy after changing it.
 
 ### 6. Reminder time
 Default cron: `30 12 * * *` (12:30 UTC = 18:00 IST) in `vercel.json`. Vercel Hobby cron runs once/day — edit the cron expression to your team's end-of-day, then redeploy.
@@ -73,5 +80,5 @@ Open `http://localhost:3000`. Add `http://localhost:3000` to `ALLOWED_ORIGINS` i
 
 ## Known limitations, by design (matches Kora's documented trade-offs)
 - Any signed-in user can edit/complete any task — fine for a small trusted team; add per-user ownership checks in `api/tasks.js` if you outgrow that.
-- Teams reminders post to one channel, not per-user DMs (a DM would need a registered Teams bot — more setup than an Incoming Webhook).
+- Teams reminders post to one channel, not per-user DMs (a DM would need a registered Teams bot — more setup than a channel webhook).
 - No offline/PWA support (Kora has this; skipped here to keep the build lean — straightforward to add later with a `manifest.json` + service worker).
